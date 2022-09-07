@@ -1,1 +1,0 @@
-futykos XDD 
