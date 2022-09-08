@@ -76,9 +76,9 @@ setwd("C:/github/M3/M3_a0")
 ```
 
 ```{r}
-data1 <- read_csv("demo_train")
-data2 <- read_csv("LU_train")
-data3 <- read_csv("token_train")
+data1 <- read_csv("demo_train.csv")
+data2 <- read_csv("LU_train.csv")
+data3 <- read_csv("token_train.csv")
 
 ```
 
@@ -100,6 +100,12 @@ Tip: look through the chapter on data transformation in R for data science (http
 
 ```{r}
 
+data1 <- data1 %>% 
+  rename( SUBJ = Child.ID) %>% 
+  rename(VISIT = Visit)
+
+
+
 ```
 
 2b. Find a way to homogenize the way "visit" is reported (visit1 vs. 1).
@@ -108,6 +114,19 @@ Tip: The stringr package is what you need. str_extract () will allow you to extr
 
 
 ```{r}
+data2$VISIT <-  data2$VISIT %>% 
+  substr(1,nchar(data2$VISIT[1])-1) %>% 
+  substr(6,nchar(data2$VISIT[1])) %>% 
+  as.integer()
+ 
+
+data3$VISIT <-  data3$VISIT %>% 
+  substr(1,nchar(data3$VISIT[1])-1) %>% 
+  substr(6,nchar(data3$VISIT[1])) %>% 
+  as.integer()
+ 
+
+
 
 
 ```
@@ -120,7 +139,9 @@ Tip: You can either have one line of code for each child name that is to be chan
 
 
 ```{r}
-
+data1$SUBJ <- gsub("\\.","",data1$SUBJ)
+data2$SUBJ <- gsub("\\.","",data2$SUBJ)
+data3$SUBJ <- gsub("\\.","",data3$SUBJ)
 ```
 
 2d. Now that the nitty gritty details of the different data sets are fixed, we want to make a subset of each data set only containig the variables that we wish to use in the final data set.
@@ -156,6 +177,23 @@ Most variables should make sense, here the less intuitive ones.
 Feel free to rename the variables into something you can remember (i.e. nonVerbalIQ, verbalIQ)
 
 ```{r}
+
+df_ultimate <- merge(merge(data1, data2, by = "SUBJ", all = TRUE),data3, by = "SUBJ", all = TRUE) %>% select(SUBJ, 
+VISIT, 
+Diagnosis, 
+Ethnicity, 
+Gender, 
+Age, 
+ADOS,  
+MullenRaw, 
+ExpressiveLangRaw, 
+Socialization,
+MOT_MLU, 
+CHI_MLU, 
+types_MOT, 
+types_CHI, 
+tokens_MOT, 
+tokens_CHI)
 
 ```
 
