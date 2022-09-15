@@ -142,6 +142,10 @@ Tip: You can either have one line of code for each child name that is to be chan
 data1$SUBJ <- gsub("\\.","",data1$SUBJ)
 data2$SUBJ <- gsub("\\.","",data2$SUBJ)
 data3$SUBJ <- gsub("\\.","",data3$SUBJ)
+
+data1$ID <- paste(data1$SUBJ,data1$VISIT, sep= "_")
+data2$ID <- paste(data2$SUBJ,data2$VISIT, sep= "_")
+data3$ID <- paste(data3$SUBJ,data3$VISIT, sep= "_")
 ```
 
 2d. Now that the nitty gritty details of the different data sets are fixed, we want to make a subset of each data set only containig the variables that we wish to use in the final data set.
@@ -178,7 +182,29 @@ Feel free to rename the variables into something you can remember (i.e. nonVerba
 
 ```{r}
 
-df_ultimate <- merge(merge(data1, data2, by = "SUBJ", all = TRUE),data3, by = "SUBJ", all = TRUE) %>% select(SUBJ, 
+data1_trial <- data1
+
+data1_trial$newshit <- paste(data1_trial$SUBJ,data1_trial$VISIT, sep= "_")
+
+
+
+```
+
+2e. Finally we are ready to merge all the data sets into just one. 
+
+Some things to pay attention to:
+* make sure to check that the merge has included all relevant data (e.g. by comparing the number of rows)
+* make sure to understand whether (and if so why) there are NAs in the data set (e.g. some measures were not taken at all visits, some recordings were lost or permission to use was withdrawn)
+
+```{r}
+
+```
+
+```{r}
+
+
+df_ultimate2 <- merge(merge(data1, data2, by = "ID", all = TRUE),data3, by = "ID", all = TRUE) %>% select(ID,
+SUBJ, 
 VISIT, 
 Diagnosis, 
 Ethnicity, 
@@ -195,19 +221,9 @@ types_CHI,
 tokens_MOT, 
 tokens_CHI)
 
-```
-
-2e. Finally we are ready to merge all the data sets into just one. 
-
-Some things to pay attention to:
-* make sure to check that the merge has included all relevant data (e.g. by comparing the number of rows)
-* make sure to understand whether (and if so why) there are NAs in the data set (e.g. some measures were not taken at all visits, some recordings were lost or permission to use was withdrawn)
-
-```{r}
-
 
 ```
-
+ 
 
 2f. Only using clinical measures from Visit 1
 In order for our models to be useful, we want to minimize the need to actually test children as they develop. In other words, we would like to be able to understand and predict the children's linguistic development after only having tested them once. Therefore we need to make sure that our ADOS, MullenRaw, ExpressiveLangRaw and Socialization variables are reporting (for all visits) only the scores from visit 1.
@@ -218,8 +234,69 @@ A possible way to do so:
 * merge the new data set with the old
 
 
+```{r}
+dfulttna <- df_ultimate2 
+
+for (x in dfulttna$SUBJ) {
+
+if(is.na(x)){
+  
+  dfulttna$SUBJ <- dfulttna$ID %>% 
+   substr(1,nchar(dfulttna$ID)-2)
+  
+  
+}
+}
+
+for (x in dfulttna$VISIT) {
+
+if(is.na(x)){
+  
+  dfulttna$VISIT <- dfulttna$ID %>% 
+   substr(nchar(dfulttna$ID),nchar(dfulttna$ID)) %>% 
+  as.integer()
+  
+}
+  }
+
+```
 
 ```{r}
+dfchange <- dfulttna %>% 
+  filter(VISIT==1) %>% 
+  select(
+   SUBJ, ADOS, MullenRaw, ExpressiveLangRaw, Socialization
+  )
+  
+#Hmmmmmmmmmmmmmmmmmmm
+
+dftest <- dfulttna
+
+```
+
+
+```{r}
+ #próbáld visittel
+x <- 1
+while (x<length(dftest$VISIT)+1){
+
+if (dftest$VISIT[x] == 1) { 
+  
+  y <- dftest$ADOS[x]
+  y_1 <- dftest$MullenRaw[x]
+  y_2 <- dftest$ExpressiveLangRaw[x]
+  y_3 <- dftest$Socialization[x]
+  
+  
+ 
+} 
+  dftest$MullenRaw[x] <- y_1
+  dftest$ExpressiveLangRaw[x] <- y_2
+  dftest$Socialization[x] <-y_3
+   dftest$ADOS[x] <- y
+   x <- x+1
+   
+  }
 
 ```
 
