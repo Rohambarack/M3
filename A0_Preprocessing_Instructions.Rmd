@@ -180,15 +180,7 @@ Most variables should make sense, here the less intuitive ones.
 
 Feel free to rename the variables into something you can remember (i.e. nonVerbalIQ, verbalIQ)
 
-```{r}
 
-data1_trial <- data1
-
-data1_trial$newshit <- paste(data1_trial$SUBJ,data1_trial$VISIT, sep= "_")
-
-
-
-```
 
 2e. Finally we are ready to merge all the data sets into just one. 
 
@@ -196,9 +188,7 @@ Some things to pay attention to:
 * make sure to check that the merge has included all relevant data (e.g. by comparing the number of rows)
 * make sure to understand whether (and if so why) there are NAs in the data set (e.g. some measures were not taken at all visits, some recordings were lost or permission to use was withdrawn)
 
-```{r}
 
-```
 
 ```{r}
 
@@ -322,4 +312,146 @@ if (dftest$VISIT[x_2] == 1) {
 dftest$ID <- paste(dftest$SUBJ,dftest$VISIT, sep= "_")
 
 ```
+functions
+
+```{r}
+
+cleanthat <- function(demodata,ludata,tokendata){
+  
+  pacman::p_load(tidyverse)
+  #1.rename child and visit in demo
+  
+  demodata <- demodata %>% 
+  rename( SUBJ = Child.ID) %>% 
+  rename(VISIT = Visit)
+  
+  #2. uniformize visit
+  
+  ludata$VISIT <-  ludata$VISIT %>% 
+  substr(1,nchar(ludata$VISIT[1])-1) %>% 
+  substr(6,nchar(ludata$VISIT[1])) %>% 
+  as.integer()
+ 
+
+  tokendata$VISIT <-  tokendata$VISIT %>% 
+  substr(1,nchar(tokendata$VISIT[1])-1) %>% 
+  substr(6,nchar(tokendata$VISIT[1])) %>% 
+  as.integer()
+  
+  #3. remove dots
+  
+  demodata$SUBJ <- gsub("\\.","",demodata$SUBJ)
+  ludata$SUBJ <- gsub("\\.","",ludata$SUBJ)
+  tokendata$SUBJ <- gsub("\\.","",tokendata$SUBJ)
+
+  demodata$ID <- paste(demodata$SUBJ,demodata$VISIT, sep= "_")
+  ludata$ID <- paste(ludata$SUBJ,ludata$VISIT, sep= "_")
+  tokendata$ID <- paste(tokendata$SUBJ,tokendata$VISIT, sep= "_")
+  
+  #4. merge sets
+  
+  df_big <- merge(merge(demodata, ludata, by = "ID", all = TRUE),tokendata, by = "ID", all = TRUE) %>% select(ID,
+SUBJ, 
+VISIT, 
+Diagnosis, 
+Ethnicity, 
+Gender, 
+Age, 
+ADOS,  
+MullenRaw, 
+ExpressiveLangRaw, 
+Socialization,
+MOT_MLU, 
+CHI_MLU, 
+types_MOT, 
+types_CHI, 
+tokens_MOT, 
+tokens_CHI)
+
+  #5. fix names (while merging some SUBJ and VISIT values turned to Nas)
+  
+for (x in df_big$SUBJ) {
+
+if(is.na(x)){
+  
+  df_big$SUBJ <- df_big$ID %>% 
+   substr(1,nchar(df_big$ID)-2)
+  
+  
+}
+}
+
+for (x in df_big$VISIT) {
+
+if(is.na(x)){
+  
+  df_big$VISIT <- df_big$ID %>% 
+   substr(nchar(df_big$ID),nchar(df_big$ID)) %>% 
+  as.integer()
+  
+}
+}
+  # 6. put only visit one values in clinical variables
+  
+  x <- 1
+while (x<length(df_big$VISIT)+1){
+
+if (df_big$VISIT[x] == 1) { 
+  
+  y <- df_big$ADOS[x]
+  y_1 <- df_big$MullenRaw[x]
+  y_2 <- df_big$ExpressiveLangRaw[x]
+  y_3 <- df_big$Socialization[x]
+  
+  
+ 
+} 
+  df_big$MullenRaw[x] <- y_1
+  df_big$ExpressiveLangRaw[x] <- y_2
+  df_big$Socialization[x] <-y_3
+   df_big$ADOS[x] <- y
+   x <- x+1
+   
+  }
+
+    #7. change 1  and 2 to male and female
+  df_big <- df_big %>% 
+  mutate(Gender = ifelse(Gender == 1,"MALE","FEMALE"))
+  
+  #8. Anonymize children SUBJ values
+  x_2 <- 1
+while (x_2<length(df_big$VISIT)+1){
+
+if (df_big$VISIT[x_2] == 1) { 
+  
+  y_4 <- x_2
+ 
+  
+ 
+} 
+  df_big$SUBJ[x_2] <- y_4
+   x_2 <- x_2+1
+   
+}
+  
+  # 10. reassing IDS
+  df_big$ID <- paste(df_big$SUBJ,df_big$VISIT, sep= "_")
+  
+  return(df_big)
+}
+
+```
+
+```{r}
+
+df_stor <- cleanthat(data1,data2,data3)
+
+write.csv(df_stor,"comb_data.csv",row.names = FALSE)
+
+```
+```{r}
+testtest <- read_csv("comb_data.csv")
+```
+
+
 
