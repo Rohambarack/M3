@@ -9,9 +9,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-
+install.packages("Rcpp")
+install.packages("dplyr")
 library(tidyverse)
 library(brms)
+library(gridExtra)
+library(cmdstanr)
 ```
 
 # Assignment 1  - Language development in autistic and neurotypical children
@@ -102,7 +105,7 @@ test_lognorm <- function(mu,sigma,ogmu,ogsigma,error,n){
   }
 ```
 ```{r}
-test_lognorm(log(m^2 / sqrt(s^2 + m^2)),sqrt(log(1 + (s^2 / m^2))),1.5,0.5,0.02,10000)
+#test_lognorm(log(m^2 / sqrt(s^2 + m^2)),sqrt(log(1 + (s^2 / m^2))),1.5,0.5,0.02,10000)
 exp(0.30513+(0.447963^2/2))
 (exp(0.447963^2)-1)*exp((2*0.30513)+0.447963^2)
 ```
@@ -119,7 +122,7 @@ td_change <- log(0.6^2 / sqrt(0.2^2 + 0.6^2))
 asd_change_var <-sqrt(log(1 + (0.4^2 / 0.4^2)))
 td_change_var <-sqrt(log(1 + (0.2^2 / 0.6^2)))
 
-error <- 0.2 
+error <- 0.2
 ```
 
 
@@ -131,67 +134,271 @@ curve(dlnorm(x, meanlog=mu_asd, sdlog=sigma_asd), from=0, to=4, col='green', add
 curve(dlnorm(x, meanlog=asd_change, sdlog=asd_change_var), from=0, to=2.5, col='black')
 curve(dlnorm(x, meanlog=td_change, sdlog=td_change_var), from=0, to=2.5, col='red', add=TRUE)
 
+teszt1 <- rlnorm(1000, meanlog = mu_td,sdlog =sigma_td )
+teszt2 <- rlnorm(1000, meanlog = mu_asd,sdlog =sigma_asd )
+teszt3 <- rlnorm(1000, meanlog = td_change,sdlog =td_change_var )
+teszt4 <- rlnorm(1000, meanlog = asd_change,sdlog =asd_change_var )
+
+mean(teszt1)
+sd(teszt1)
+
+mean(teszt2)
+sd(teszt2)
+mean(teszt3)
+sd(teszt3)
+mean(teszt4)
+sd(teszt4)
 ```
-
-
-
-
 
 This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6.
 
 With these values in mind, simulate data, plot the data (to check everything is alright); and set up an analysis pipeline.
-Remember the usual bayesian workflow:
-- define the formula
-
+## simulate
 
 ```{r}
-set.seed(2)
+set.seed(3)
 
 n <- 30
+simdata3 <- tibble(group = rep(c("asd","td"),each=n*6),
+                   visit = rep(1:6, times = n*2),
+                   id = rep((seq(n*2)),each = 6),
+                   Ind_Int = ifelse(group == "asd", 
+                            rep(rlnorm(n, meanlog = mu_asd ,  sdlog = sigma_asd), each=6),
+                            rep(rlnorm(n, meanlog = mu_td, sdlog = sigma_td ),each=6)),
+                   Ind_Slope  = ifelse(group == "asd", 
+                            rep(rlnorm(n, meanlog = asd_change, sdlog = asd_change_var),each=6),
+                            rep(rlnorm(n, meanlog = td_change, sdlog = td_change_var),each=6)),
+                   MLU_no_error = Ind_Int+(Ind_Slope*(visit-1)),
+                   ror = rnorm(12*n,0,error),
+                   MLUr =  MLU_no_error + ror,
+                   MLU = ifelse(MLUr < 0,0.001,MLUr)                    
+                   )
 
-simdata2 <- tibble(group = rep(c("asd", "td"), each = n)) %>% 
-  mutate(ASD = ifelse(group == "td", 0, 1),
-         ID = row.names(.),
-         Ind_Intercept         = ifelse(group == "asd", 
-                            rlogistic_normal(n, mu = mu_asd , Sigma = sigma_asd),
-                            rlogistic_normal(n, mu = mu_td, Sigma = sigma_td )),
-        Ind_Slope        = ifelse(group == "asd", 
-                            rlogistic_normal(n, mu = asd_change, Sigma = asd_change_var),
-                            rlogistic_normal(n, mu = td_change, Sigma = td_change_var)
-       ))
-        
+                     
+
+```
+```{r}
+plot_1 <- simdata3 %>% 
+  filter(group == "asd") %>% 
+  ggplot(aes(x=visit,y=MLU))+
+  geom_point()+
+  geom_smooth(color = "red")+
+  ggtitle("ASD")+
+  theme_classic()
+
+plot_2 <- simdata3 %>% 
+  filter(group == "td") %>% 
+  ggplot(aes(x=visit,y=MLU))+
+  geom_point()+
+  geom_smooth()+
+  ggtitle("TD")+
+  theme_classic()
+
+grid.arrange(plot_1,plot_2,nrow = 1)
+```
+```{r}
+plot_4 <- simdata3 %>% 
+  filter(group == "asd") %>% 
+  ggplot(aes(x=MLU))+
+  geom_histogram(binwidth = .1, color = "red", fill = "white")+
+  ggtitle("ASD mlu per visit")+
+  theme_classic()+
+  facet_wrap(~visit)
+plot_5 <- simdata3 %>% 
+  filter(group == "td") %>% 
+  ggplot(aes(x=MLU))+
+  geom_histogram(binwidth = .1, color = "Blue", fill = "white")+
+  ggtitle("TD mlu per visit")+
+  theme_classic()+
+  facet_wrap(~visit)
+
+grid.arrange(plot_4,plot_5, nrow = 1)
+```
+```{r}
+simdata3 %>% 
+  filter(id == 1) %>% 
+  ggplot(aes(x=visit,y=MLU))+
+  geom_point()+
+  geom_smooth(method = "glm")+
+  ggtitle("1")+
+  theme_classic()
+```
+```{r}
+simdata3 %>% 
+  ggplot(aes(visit, MLU, color = group, group = id)) +
+  geom_point()+
+  geom_line()+
+  theme_classic()
+
+```
+
+Remember the usual bayesian workflow:
+## define the formula
+
+```{r}
+mlu_f <- bf(MLU ~ 0+group+group:visit+(1+visit|id))
+```
+We go through the literature and we settle for some values for these parameters:
+- average MLU for ASD and TD: 1.5 (remember the populations are matched for linguistic ability at first visit)
+- average individual variability in initial MLU for ASD 0.5; for TD 0.3 (remember ASD tends to be more heterogeneous)
+- average change in MLU for ASD: 0.4; for TD 0.6 (ASD is supposed to develop less)
+- average individual variability in change for ASD 0.4; for TD 0.2 (remember ASD tends to be more heterogeneous)
+- error is identified as 0.2
+##- define the prior
+```{r}
+curve(dlnorm(x, meanlog =  0.386, sdlog = 0.2 ), from=0, to=10, col='black')
+curve(dlnorm(x, meanlog =0.386, sdlog =0.3), from=0, to=10, col='red', add=TRUE)
+
 ```
 
 
 ```{r}
-simdata2 %>%
-  filter(ASD==1) %>% 
-  ggplot(aes(x=Ind_Intercept))+
-  geom_histogram(binwidth = .01) +
-  ggtitle("asd")
+#trial
+set.seed(3)
 
-simdata2 %>%
-  filter(ASD==0) %>% 
-  ggplot(aes(x=Ind_Intercept))+
-  geom_histogram(binwidth = .01) +
-  ggtitle("td")
+mlu_p_1 <- c(
+  prior(lognormal(-0.56,0.32), class = b),
+  prior(lognormal(0.386,0.2), class = b, coef = "groupasd"),
+  prior(lognormal(0.386,0.2), class = b, coef = "grouptd"),
+  prior(lognormal(0,0.2), class = sd, coef = Intercept, group= id),
+   prior(lognormal(0,0.2), class = sd, coef = visit, group= id)
+)
+
+```
+
+```{r}
+#updated based on pp
+set.seed(3)
+
+mlu_p_2 <- c(
+  prior(lognormal(-0.56,0.42), class = b),
+  prior(lognormal(0.386,0.4), class = b, coef = "groupasd"),
+  prior(lognormal(0.386,0.4), class = b, coef = "grouptd"),
+  prior(lognormal(0,0.6), class = sd, coef = Intercept, group= id),
+   prior(lognormal(0,1), class = sd, coef = visit, group= id)
+)
+
 ```
 
 
-
-
-- define the prior
 - prior predictive checks
+
+```{r}
+set.seed(3)
+mlu_pp_1 <- brm(
+  mlu_f,
+  data= simdata3,
+  prior = mlu_p_2,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+
+  )
+
+pp_check(mlu_pp_1, ndraws = 100)
+  
+  
+```
+
 - fit the model
+```{r}
+set.seed(3)
+mlu_m1 <- brm(
+  mlu_f,
+  data= simdata3,
+  prior = mlu_p_2,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+
+  )
+
+pp_check(mlu_m1, ndraws = 100)
+  
+  
+```
 - model quality checks: traceplots, divergences, rhat, effective samples
+
+```{r}
+set.seed(3)
+# Model inference (population estimate) plus actual data
+plot(conditional_effects(mlu_m1), points = T)
+
+```
+a priorok: 
+mlu_p_2 <- c(
+  prior(lognormal(-0.56,0.32), class = b),
+  prior(lognormal(0.386,0.2), class = b, coef = "groupasd"),
+  prior(lognormal(0.386,0.2), class = b, coef = "grouptd"),
+  prior(lognormal(0,0.2), class = sd, coef = Intercept, group= id),
+   prior(lognormal(0,0.2), class = sd, coef = visit, group= id)
+)
+```{r}
+set.seed(3)
+#Sample the parameters of interest:
+post_mlu_m1 <- as_draws_df(mlu_m1)
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_b_groupasd), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_groupasd), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept for asd') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_b_grouptd), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_grouptd), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Inercept for td') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(`prior_b_groupasd:visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_groupasd:visit`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('asd change by visit') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(`prior_b_grouptd:visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_grouptd:visit`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('td change by visit') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_sd_id__Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_id__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individual intercepts') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_sd_id__visit), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_id__visit), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individial slopes') +
+  theme_classic()
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_cor_id), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(cor_id__Intercept__visit), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('correlation') +
+  theme_classic()
+
+```
+```{r}
+summary(mlu_m1)
+```
+
 - model quality checks: posterior predictive checks, prior-posterior update checks
 - model comparison
 
-```{r}
 
-
-
-```
 
 
 Once the pipeline is in place, loop through different sample sizes to assess how much data you would need to collect. N.B. for inspiration on how to set this up, check the tutorials by Kurz that are linked in the syllabus.
