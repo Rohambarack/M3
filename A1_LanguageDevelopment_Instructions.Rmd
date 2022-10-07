@@ -9,8 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-install.packages("Rcpp")
-install.packages("dplyr")
+library("Rcpp")
 library(tidyverse)
 library(brms)
 library(gridExtra)
@@ -292,13 +291,14 @@ mlu_pp_1 <- brm(
   sample_prior = "only",
   backend = "cmdstanr",
   chains = 2,
-  cores = 2,
+  cores = 5,
   control = list(
     adapt_delta = 0.99,
     max_treedepth = 20
   )
 
   )
+
 
 pp_check(mlu_pp_1, ndraws = 100)
   
@@ -315,7 +315,22 @@ mlu_m1 <- brm(
   sample_prior = T,
   backend = "cmdstanr",
   chains = 2,
-  cores = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+
+  )
+
+mlu_m2 <- brm(
+  mlu_f,
+  data= simdata3,
+  prior = mlu_p_1,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
   control = list(
     adapt_delta = 0.99,
     max_treedepth = 20
@@ -392,12 +407,16 @@ ggplot(post_mlu_m1) +
 
 ```
 ```{r}
-summary(mlu_m1)
+summary(mlu_m2)
 ```
 
 - model quality checks: posterior predictive checks, prior-posterior update checks
 - model comparison
 
+```{r}
+
+loo_compare(loo(mlu_m1),loo(mlu_m2))
+```
 
 
 
@@ -405,8 +424,104 @@ Once the pipeline is in place, loop through different sample sizes to assess how
 
 BONUS questions for Part 1: what if the difference between ASD and TD was 0? how big of a sample size would you need? What about different effect sizes, and different error terms?
 
-```{r}
+##Balazs looping time
 
+```{r}
+sim_data <- function(seed, n) {
+  
+set.seed(seed)
+  
+mu_asd <- log(1.5^2 / sqrt(0.5^2 + 1.5^2))
+mu_td <- log(1.5^2 / sqrt(0.3^2 + 1.5^2))
+sigma_asd <-sqrt(log(1 + (0.5^2 / 1.5^2)))
+sigma_td <- sqrt(log(1 + (0.3^2 / 1.5^2)))
+
+asd_change <- log(0.4^2 / sqrt(0.4^2 + 0.4^2))
+td_change <- log(0.6^2 / sqrt(0.2^2 + 0.6^2))
+asd_change_var <-sqrt(log(1 + (0.4^2 / 0.4^2)))
+td_change_var <-sqrt(log(1 + (0.2^2 / 0.6^2)))
+
+error <- 0.2
+  
+
+  
+ simdata <- tibble(group = rep(c("asd","td"),each=n*6),
+                   visit = rep(1:6, times = n*2),
+                   id = rep((seq(n*2)),each = 6),
+                   Ind_Int = ifelse(group == "asd", 
+                            rep(rlnorm(n, meanlog = mu_asd ,  sdlog = sigma_asd), each=6),
+                            rep(rlnorm(n, meanlog = mu_td, sdlog = sigma_td ),each=6)),
+                   Ind_Slope  = ifelse(group == "asd", 
+                            rep(rlnorm(n, meanlog = asd_change, sdlog = asd_change_var),each=6),
+                            rep(rlnorm(n, meanlog = td_change, sdlog = td_change_var),each=6)),
+                   MLU_no_error = Ind_Int+(Ind_Slope*(visit-1)),
+                   ror = rnorm(12*n,0,error),
+                   MLUr =  MLU_no_error + ror,
+                   MLU = ifelse(MLUr < 0,0.001,MLUr)                    
+                   )
+ 
+}
+
+```
+
+```{r}
+#making a nested dataframe with the models
+
+# how many simulations would you like?
+n_sim <- 100
+
+# this will help us track time
+t1 <- Sys.time()
+
+# here's the main event!
+s <-
+  tibble(seed = 1:n_sim) %>% 
+  mutate(simdata = map(seed, sim_data, n = 30)) %>% 
+  mutate(mlu_m1 = map2(simdata, seed, ~update(mlu_m1, newdata = .x, seed = .y)))
+
+t2 <- Sys.time()
+```
+
+
+```{r}
+t2-t1
+```
+```{r}
+head(s)
+```
+```{r}
+parameterstd <-
+  s %>% 
+  mutate(`grouptd:visit` = map(mlu_m1, ~ fixef(.) %>% 
+                           data.frame() %>% 
+                           rownames_to_column("parametertd"))) %>% 
+  unnest(`grouptd:visit`)
+
+parametersasd <-
+  s %>% 
+  mutate(`groupasd:visit` = map(mlu_m1, ~ fixef(.) %>% 
+                           data.frame() %>% 
+                           rownames_to_column("parameterasd"))) %>% 
+  unnest(`groupasd:visit`)
+
+paratd <- parameterstd %>% 
+  select(-simdata, -mlu_m1) %>% 
+  filter(parametertd == "grouptd:visit")
+
+paraasd <- parametersasd %>% 
+  select(-simdata, -mlu_m1) %>% 
+  filter(parameterasd == "groupasd:visit")
+```
+```{r}
+parafull <- merge(paraasd,paratd, by = "seed")
+```
+```{r}
+parafull %>% 
+  
+  ggplot(aes(x = seed)) +
+  geom_pointrange(fatten = 1/2, y = Estimate, ymin = Q2.5, ymax = Q97.5) +
+  labs(x = "seed (i.e., simulation index)",
+       y = expression(beta[1]))
 ```
 
 
