@@ -8,8 +8,10 @@ date: "2022-08-15"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
 ```{r}
-library("Rcpp")
+remove.packages(c("Rcpp","dplyer"))
+install.packages(c("Rcpp","dplyer"))
 library(tidyverse)
 library(brms)
 library(gridExtra)
@@ -138,15 +140,6 @@ teszt2 <- rlnorm(1000, meanlog = mu_asd,sdlog =sigma_asd )
 teszt3 <- rlnorm(1000, meanlog = td_change,sdlog =td_change_var )
 teszt4 <- rlnorm(1000, meanlog = asd_change,sdlog =asd_change_var )
 
-mean(teszt1)
-sd(teszt1)
-
-mean(teszt2)
-sd(teszt2)
-mean(teszt3)
-sd(teszt3)
-mean(teszt4)
-sd(teszt4)
 ```
 
 This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6.
@@ -460,7 +453,9 @@ error <- 0.2
                    MLU = ifelse(MLUr < 0,0.001,MLUr)                    
                    )
  
-}
+
+ }
+
 
 ```
 
@@ -514,19 +509,187 @@ paraasd <- parametersasd %>%
 ```
 ```{r}
 parafull <- merge(paraasd,paratd, by = "seed")
+parafull<- parafull %>% 
+  mutate( power = ifelse(Q2.5.y - Q97.5.x > 0,1,0))
 ```
 ```{r}
+lab_colors <- c("TD" = "blue", "ASD" = "red")
+
 parafull %>% 
-  
   ggplot(aes(x = seed)) +
-  geom_pointrange(fatten = 1/2, y = Estimate, ymin = Q2.5, ymax = Q97.5) +
+  geom_pointrange(fatten = 1/2,aes(y = Estimate.x, ymin = Q2.5.x, ymax = Q97.5.x, color = "ASD")) +
+  geom_pointrange(fatten= 1/2,aes(y = Estimate.y, ymin = Q2.5.y, ymax = Q97.5.y, color = "TD"))+
   labs(x = "seed (i.e., simulation index)",
-       y = expression(beta[1]))
+       y = " ",
+       color = "Legend",
+       subtitle = str_glue("80 participants from each group, power = {mean(parafull$power)}"))+
+  scale_color_manual(values = lab_colors)
+
+```
+## precision time
+
+```{r}
+parafullp <-
+  parafull %>% 
+  mutate(TDwidth = Q97.5.y - Q2.5.y,
+         ASDwidth = Q97.5.x - Q2.5.x,
+         diff = Q2.5.y-Q97.5.x)
+
+parafullp %>% 
+  mutate(TDcheck = ifelse(TDwidth < .2, 1, 0),
+         ASDcheck = ifelse(ASDwidth < .2, 1, 0)) %>% 
+  summarise(`TDprecision` = mean(TDcheck), ASDprecision =mean(ASDcheck), avgtd =mean(TDwidth),avgasd =mean(ASDwidth))
+
+```
+## Vicotria time
+
+```{r}
+
+steszt <- s %>% 
+  #s is a nested datafreame with a 100 rows of simulations and fitted models
+ mutate(`betas` = map(mlu_m1, ~ as_draws_df(.) %>% 
+  #we add a new column to that nested dataframe called betas, which takes the models
+    #and extracts all posterior values
+                          data.frame()%>% 
+    #we make betas into a dataframe, so now in the nested dataframe s, we
+    #have a 1,seed 2,a simuated set 3,a fitte model 4, a dataframe containing 2000 posteriors for
+    #a bunch of betas.
+                         rownames_to_column("parameters")))%>%
+  #I'm not sure what this does, but it works so I won't touch it
+  select(-simdata,-mlu_m1) %>% 
+  #We don't want the simulated set or the fitted models, because it would take forever to load.
+  unnest(`betas`) %>%
+  #we extract the betas
+  select(seed,`b_groupasd.visit`,`b_grouptd.visit`)
+#we choose the betas we need.
+#now we should have a dataframe of 200.000 x 3 , because we have 2000 posteriors for each of the hundred seeds
+
 ```
 
+```{r}
+fos <- steszt %>% 
+  mutate(`betas` = map(mlu_m1, ~ as_draws_df(.) %>% 
+                          data.frame()%>% 
+                         rownames_to_column("parameters")))%>%
+  select(-simdata,-mlu_m1) %>% 
+  unnest(`betas`) %>% 
+  select(seed,`b_groupasd.visit`,`b_grouptd.visit`) 
+  
+ steszt %>% 
+   filter(seed == 1) %>% 
+   ggplot()+
+  geom_density(aes(`b_grouptd.visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_groupasd.visit`), fill="#FC4E07", color="black",alpha=0.6) 
+
+   steszt %>% 
+   filter(seed == 2) %>% 
+   ggplot()+
+  geom_density(aes(`b_grouptd.visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_groupasd.visit`), fill="#FC4E07", color="black",alpha=0.6) 
+```
+
+```{r}
+lab_colors <- c("TD" = "blue", "ASD" = "red")
+#we need this to have nice colors :)
+#now we can take a look at all posterior values, not just the 95%,
+steszt2<-steszt %>% 
+  group_by(seed) %>% 
+  #we group the 2000 values by seed
+  summarise(mean(b_groupasd.visit),
+            min(b_groupasd.visit),
+            max(b_groupasd.visit),
+            mean(b_grouptd.visit),
+            min(b_grouptd.visit),
+            max(b_grouptd.visit)) %>% 
+  #we summarize based on the variables we need to insert into the ggplot geom_pointrange
+  mutate( power = ifelse( `min(b_grouptd.visit)`- `max(b_groupasd.visit)` > 0,1,0)) 
+# we calculate powwer
+
+steszt2 %>% 
+  ggplot(aes(x=seed)) +
+  geom_pointrange(fatten = 1/2,aes(y = `mean(b_groupasd.visit)`,ymin = `min(b_groupasd.visit)`, ymax = `max(b_groupasd.visit)`, color = "ASD"))+
+  geom_pointrange(fatten = 1/2,aes(y = `mean(b_grouptd.visit)`,ymin = `min(b_grouptd.visit)`, ymax = `max(b_grouptd.visit)`, color = "TD"))+
+  #geom_pointrange is specified
+  labs(x = "seed (i.e., simulation index)",
+       y = " ",
+       color = "Legend",
+       #additional labs
+       subtitle = str_glue("30 participants from each group, power = {mean(steszt2$power)}"))+
+  scale_color_manual(values = lab_colors)
+ 
+```
+
+
+## 80% intervals
+
+```{r}
+
+ steszt4 <- s %>% 
+ mutate(`betas` = map(mlu_m1, ~ posterior_interval(.,prob = .8) %>% 
+  
+   data.frame()%>% 
+                         rownames_to_column("parameters")))%>%
+ 
+  select(-simdata,-mlu_m1) %>% 
+  
+  unnest(`betas`) %>%
+  filter(parameters == "b_groupasd:visit" | parameters == "b_grouptd:visit" )
+  
+ 
+```
+```{r}
+
+steszt4_1 <- steszt4 %>% 
+  filter(parameters == "b_groupasd:visit")
+
+steszt4_2 <- steszt4 %>% 
+  filter(parameters == "b_grouptd:visit")
+
+
+steszt4_full <-merge(steszt4_1,steszt4_2, by = "seed")
+
+```
+
+```{r}
+
+steszt3<-steszt4_full %>% 
+  mutate( power = ifelse( `X10..y` - `X90..x` > 0,1,0)) 
+
+steszt3 %>% 
+  ggplot(aes(x=seed)) +
+  geom_errorbar(aes( ymin = `X10..x`, ymax = `X90..x`, color = "ASD"))+
+  geom_errorbar(aes( ymin = `X10..y`, ymax = `X90..y`, color = "TD"))+
+  labs(x = "seed (i.e., simulation index)",
+       y = " ",
+       color = "Legend",
+       subtitle = str_glue("30 participants from each group, power = {mean(steszt3$power)}"))+
+  scale_color_manual(values = lab_colors)
+ 
+ 
+```
+
+```{r}
+setwd(".")
+write_csv(parafull,"parafull.csv")
+write_csv(steszt,"draws_data_teszt.csv")
+```
 
 
 # Part 2 - Strong in the Bayesian ken, you are now ready to analyse the actual data
+
+```{r}
+Realdata <- read_csv("comb_data.csv")
+
+length(unique(Realdata$SUBJ))
+# n = 66
+# with 60 it was 0.7 so should be enough
+
+Realdata %>% 
+  ggplot(aes(x=Age)) +
+  geom_density()
+
+```
+
 
 - Describe your sample (n, age, gender, clinical and cognitive features of the two groups) and critically assess whether the groups (ASD and TD) are balanced. Briefly discuss whether the data is enough given the simulations in part 1.
 - Describe linguistic development (in terms of MLU over time) in TD and ASD children (as a function of group). Discuss the difference (if any) between the two groups.
