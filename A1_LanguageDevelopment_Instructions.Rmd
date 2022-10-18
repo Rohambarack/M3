@@ -1009,9 +1009,184 @@ Realdata %>%
 ```
 It seems in the autistic group, there is a negative correlation. let's test it with bayesian methods.
 ```{r}
+#separate dataframes
+RealdataA <- Realdata %>% 
+  filter(Diagnosis == "A")
+RealdataB <- Realdata %>% 
+  filter(Diagnosis == "B")
 
 ```
+Test correlations for the Typically developing group
+```{r}
+# specify formula
 
+ B_cortest_f <- bf(mvbind(ADOS, ExpressiveLangRaw) ~ 1) + set_rescor(TRUE)
+# priors
+ B_cortest_p <- c(prior(gamma(2, .1), class = nu),
+                prior(normal(0, 1), class = Intercept, resp = ADOS),
+                prior(normal(0, 1), class = Intercept, resp = ExpressiveLangRaw),
+                prior(normal(1, .3), class = sigma, resp = ADOS),
+                prior(normal(1, .3), class = sigma, resp = ExpressiveLangRaw),
+                prior(lkj(1), class = rescor)
+                      )
+ 
+ #get_prior(B_cortest_f,RealdataB)
+ 
+# fit
+ 
+  B_cor_mB <- 
+  brm(
+    B_cortest_f,
+    data = RealdataB, 
+      family = student,
+      prior = B_cortest_p,
+      sample_prior = T,
+    backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 2, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+```
+```{r}
+print(B_cor_mB)
+```
+Test correlations for the Autistic group
+```{r}
+
+# fit
+ 
+  B_cor_mA <- update(
+    B_cor_mB,
+    newdata = RealdataA,
+    sample_prior = T,
+    backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 2, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+```
+```{r}
+print(B_cor_mA)
+```
+## Finalizing models
+so, based on the previous section I think the use of these 3 models would be approriate.
+Model 1
+Model 2
+Model 3 -with only ExpressivelangRaw as predictor.
+```{r}
+#making the the modified model 3
+set.seed(3)
+#model
+mlu_realdata_f_ELR<- bf(CHI_MLU ~ 0+Diagnosis+Diagnosis:VISIT+ExpressiveLangRaw+(1+VISIT|SUBJ))
+#priors
+
+mlu_realdata_p_ELR <- c(
+  prior(lognormal(-0.56,0.42), class = b),
+  prior(lognormal(0.386,0.4), class = b, coef = "DiagnosisA"),
+  prior(lognormal(0.386,0.4), class = b, coef = "DiagnosisB"),
+  prior(lognormal(0,0.6), class = sd, coef = Intercept, group= SUBJ),
+   prior(lognormal(0,1), class = sd, coef = VISIT, group= SUBJ),
+         prior(normal(0,1),class = b, coef = ExpressiveLangRaw)
+               
+)
+
+#prior predictive check
+
+mlu_realdata_pp1_ELR <- brm(
+  mlu_realdata_f_ELR,
+  data= Realdata,
+  prior = mlu_realdata_p_ELR,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(mlu_realdata_pp1_ELR,ndraws = 100)
+
+#fit
+mlu_realdata_m_ELR <- brm(
+  mlu_realdata_f_ELR,
+  data= Realdata,
+  prior = mlu_realdata_p_ELR,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+#prior-posterior update check
+pp_check(mlu_realdata_m_ELR,ndraws = 100)
+#prior-posterior update plots
+post_mlu_realdata_m1 <- as_draws_df(mlu_realdata_m_ELR)
+
+grid.arrange(
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_b_DiagnosisA), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_DiagnosisA), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept for asd') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_b_DiagnosisB), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_DiagnosisB), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Inercept for td') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(`prior_b_DiagnosisA:VISIT`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_DiagnosisA:VISIT`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('asd change by visit') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(`prior_b_DiagnosisB:VISIT`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_DiagnosisB:VISIT`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('td change by visit') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_sd_SUBJ__Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_SUBJ__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individual intercepts') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_sd_SUBJ__VISIT), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_SUBJ__VISIT), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individial slopes') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_cor_SUBJ), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(cor_SUBJ__Intercept__VISIT), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('correlation') +
+  theme_classic(),
+
+ggplot(post_mlu_realdata_m1) +
+  geom_density(aes(prior_b_ExpressiveLangRaw), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_ExpressiveLangRaw), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('ELR') +
+  theme_classic()
+)
+#summary
+summary(mlu_realdata_m_ELR)
+#hypothesis testing
+hypothesis(mlu_realdata_m_ELR, "DiagnosisA:VISIT < DiagnosisB:VISIT ")
+```
+
+## model comparisons 
 
 Part 3 - From explanation to prediction
 

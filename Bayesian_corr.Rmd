@@ -203,6 +203,8 @@ B_cor_studentm <-
     adapt_delta = 0.99,
     max_treedepth = 20
   ))
+
+pp_check(B_cor_studentm,resp = "V1", ndraws = 100)
 ```
 ```{r}
 print(B_cor_studentm)
