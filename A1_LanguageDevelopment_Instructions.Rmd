@@ -1001,13 +1001,15 @@ mlu_realdata_m_clinic %>%
 # Bayesian correlation test
 Since only ADOS and ExpressiveLangraw seem viable predictors, I need to see to what extent are they correlated.
 
-https://baezortega.github.io/2018/05/28/robust-correlation/
-
 ```{r}
 Realdata %>% 
   ggplot(aes(x=ADOS,y = ExpressiveLangRaw,color = Diagnosis))+
   geom_point()+
   geom_smooth(method = glm)
+```
+It seems in the autistic group, there is a negative correlation. let's test it with bayesian methods.
+```{r}
+
 ```
 
 

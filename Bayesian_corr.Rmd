@@ -1,0 +1,213 @@
+---
+title: "Bayesian Correlations"
+author: "Balazs Szabo"
+date: "2022-10-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse,brms,cmdstanr,gridExtra,mvtnorm)
+pacman::p_load(ggthemes)
+```
+literature:https://www.sumsar.net/blog/2013/08/bayesian-estimation-of-correlation/
++
+https://baezortega.github.io/2018/05/28/robust-correlation/
++
+https://solomonkurz.netlify.app/post/2019-02-10-bayesian-robust-correlations-with-brms-and-why-you-should-love-student-s-t/
+
+other Bayesian test:
+t-test:https://www.sumsar.net/best_online/
+chi-square test:https://lingpipe-blog.com/2009/10/13/bayesian-counterpart-to-fisher-exact-test-on-contingency-tables/
+anova: http://doingbayesiandataanalysis.blogspot.com/2012/04/improved-programs-for-hierarchical.html
+
+
+
+```{r}
+sigma <- c(20, 40)  # the variances
+rho   <- -.95       # the desired correlation
+
+# here's the variance/covariance matrix
+cov.mat <- 
+  matrix(c(sigma[1] ^ 2,
+           sigma[1] * sigma[2] * rho,
+           sigma[1] * sigma[2] * rho,
+           sigma[2] ^ 2),
+         nrow = 2, byrow = T)
+
+# after setting our seed, we're ready to simulate with `rmvnorm()`
+set.seed(210191)
+x.clean <- 
+  rmvnorm(n = 40, sigma = cov.mat) %>% 
+  as_tibble() %>% 
+  mutate(x = V1,
+         y = V2) %>% 
+  select(-x,-y)
+```
+```{r}
+# making an outlier filled (3 each) noisy dataset
+x.noisy <- x.clean
+
+x.noisy[1:3,] <-
+  matrix(c(-40, -60,
+           20, 100,
+           40, 40),
+         nrow = 3, byrow = T)
+
+#indexing the outliers
+x.clean <-
+  x.clean %>% 
+  mutate(outlier = factor(0))
+
+x.noisy <- 
+  x.noisy %>% 
+  mutate(outlier = c(rep(1, 3), rep(0, 37)) %>% as.factor(.))
+
+```
+
+```{r}
+#plots
+x.clean %>% 
+  ggplot(aes(x = V1, y = V2, color = outlier, fill = outlier)) +
+  geom_point() +
+  stat_ellipse(geom = "polygon", alpha = .15, size = .15, level = .5) +
+  stat_ellipse(geom = "polygon", alpha = .15, size = .15, level = .95) +
+  scale_color_fivethirtyeight() +
+  scale_fill_fivethirtyeight() +
+  coord_cartesian(xlim = c(-50, 50),
+                  ylim = c(-100, 100)) +
+  theme_fivethirtyeight() +
+  theme(legend.position = "none")
+
+x.noisy %>% 
+  ggplot(aes(x = V1, y = V2, color = outlier, fill = outlier)) +
+  geom_point() +
+  stat_ellipse(geom = "polygon", alpha = .15, size = .15, level = .5) +
+  stat_ellipse(geom = "polygon", alpha = .15, size = .15, level = .95) +
+  scale_color_fivethirtyeight() +
+  scale_fill_fivethirtyeight() +
+  coord_cartesian(xlim = c(-50, 50),
+                  ylim = c(-100, 100)) +
+  theme_fivethirtyeight() +
+  theme(legend.position = "none")
+```
+## Pearson's cor fails:
+The clean data's rho values is nicely captured, but the few outliers hideously influence the outlying, obvious correlation 
+```{r}
+cor(x.clean$V1,x.clean$V2)
+```
+```{r}
+cor(x.noisy$V1,x.noisy$V2)
+```
+## Bayesian with family = gauss
+```{r}
+# specify formula
+
+ B_cor_gaussf <- bf(mvbind(V1, V2) ~ 1) + set_rescor(TRUE)
+
+#set priors
+ B_cor_gaussp <- c(prior(normal(0, 100), class = Intercept, resp = V1),
+                prior(normal(0, 100), class = Intercept, resp = V2),
+                prior(normal(0, 100), class = sigma, resp = V1),
+                prior(normal(0, 100), class = sigma, resp = V2),
+                prior(lkj(1), class = rescor))
+ 
+ # pp check?
+ 
+  B_cor_gausspp1 <- 
+  brm(
+    B_cor_gaussf,
+    data = x.clean, 
+      family = gaussian,
+      prior = B_cor_gaussp,
+      sample_prior = "only",
+    backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 4, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+  
+  pp_check(B_cor_gausspp1, resp = "V1", ndraws = 100)
+  pp_check(B_cor_gausspp1, resp = "V2", ndraws = 100)
+  
+  #fit
+   B_cor_gaussm1 <- 
+  brm(
+    B_cor_gaussf,
+    data = x.clean, 
+      family = gaussian,
+      prior = B_cor_gaussp,
+      sample_prior = T,
+    backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 4, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+   
+   ##pp check 2
+   pp_check(B_cor_gaussm1, resp = "V1", ndraws = 100)
+   pp_check(B_cor_gaussm1, resp = "V2", ndraws = 100)
+```
+```{r}
+summary(B_cor_gaussm1)
+```
+
+## Bayesian gauss with noisy included 
+also fails to capture the underlying correlation
+```{r}
+#shortcuts were made
+
+B_cor_gaussm2 <- update(B_cor_gaussm1,
+                        newdata = x.noisy,
+                         backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 4, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+  )
+```
+```{r}
+print(B_cor_gaussm2)
+```
+
+## Student's T correlation test
+```{r}
+# new priors (gamma is recommended by the brms team. or at least I guess)
+
+B_cor_studentp <- c(prior(gamma(2, .1), class = nu),
+                prior(normal(0, 100), class = Intercept, resp = V1),
+                prior(normal(0, 100), class = Intercept, resp = V2),
+                prior(normal(0, 100), class = sigma, resp = V1),
+                prior(normal(0, 100), class = sigma, resp = V2),
+                prior(lkj(1), class = rescor))
+#fit
+B_cor_studentm <- 
+  brm(B_cor_gaussf,
+      data = x.noisy, 
+      family = student,
+      prior = B_cor_studentp,
+      sample_prior = T,
+      backend = "cmdstanr",
+      iter = 2000, warmup = 500, chains = 4, cores = 4, 
+      seed = 210191,
+    control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+```
+```{r}
+print(B_cor_studentm)
+```
+## lesson learned
+When using bayesian correlation analysis, stick to a students t distribution.
+
+
