@@ -1391,8 +1391,11 @@ sqrt(mean((kfpm_elr$y - colMeans(kfpm_elr$yrep))^2))
 ```
 ```{r}
 #plot it
+#for a non alphabetical order
+level_order <- c('RMSE', 'RMSE_test', 'RMSE_CV')
+
 rmse_compare %>% 
-  ggplot(aes(x = type, y = value, color = model, group = model))+
+  ggplot(aes(x = factor(type,levels = level_order), y = value, color = model, group = model))+
   geom_point()+
   geom_line()+
   theme_classic()
