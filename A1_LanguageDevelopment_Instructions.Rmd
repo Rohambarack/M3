@@ -1328,15 +1328,6 @@ Realdata_pred <- Realdata %>%
           Predmelr = predict(mlu_realdata_m_ELR, newdata = Realdata, allow_new_levels = T )) %>% 
   drop_na(CHI_MLU)
 
-#putting RMSE in a tibble
-rmse_compare <- tibble( model = c("Baseline","ADOS","ELR"),
-                        RMSE = c(
-sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predm1[1,])^2)),
-sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predmados[1,])^2)),
-sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predmelr[1,])^2))
-                        )
-
-)
 
 #importing new data
 
@@ -1366,14 +1357,50 @@ test_Realdata <- test_Realdata %>%
           Predmelr = predict(mlu_realdata_m_ELR, newdata = test_Realdata, allow_new_levels = T )) %>% 
   drop_na(CHI_MLU)
 
-# add it to the tibble
+#cross validation
+kfoldm1 <- kfold(mlu_realdata_m1, folds = "stratified", group = "SUBJ", K= 5, save_fits = T)
+kfpm1 <- kfold_predict(kfoldm1)
 
-rmse_compare$RMSE_test <-  c(
+kfoldm_ados <- kfold(mlu_realdata_m_ados, folds = "stratified", group = "SUBJ", K= 5, save_fits = T)
+kfpm_ados <- kfold_predict(kfoldm_ados)
+
+kfoldm_elr <- kfold(mlu_realdata_m_ELR, folds = "stratified", group = "SUBJ", K= 5, save_fits = T)
+kfpm_elr <- kfold_predict(kfoldm_elr)
+
+# tibble it
+rmse_compare <- tibble( model = rep(c("Baseline","ADOS","ELR"),3),
+                        type = c(rep("RMSE",3),rep("RMSE_test",3),rep("RMSE_CV",3)),
+                        value = c(
+                          #rmse with train data
+sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predm1[1,])^2)),
+sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predmados[1,])^2)),
+sqrt(mean((Realdata_pred$CHI_MLU - Realdata_pred$Predmelr[1,])^2)),
+# rmse with test data
 sqrt(mean((test_Realdata$CHI_MLU - test_Realdata$Predm1[1,])^2)),
 sqrt(mean((test_Realdata$CHI_MLU - test_Realdata$Predmados[1,])^2)),
-sqrt(mean((test_Realdata$CHI_MLU - test_Realdata$Predmelr[1,])^2))
+sqrt(mean((test_Realdata$CHI_MLU - test_Realdata$Predmelr[1,])^2)),
+#rmse with cross validation ( colmeans is for an average for the 2000 posteriors for the values)
+sqrt(mean((kfpm1$y - colMeans(kfpm1$yrep))^2)),
+sqrt(mean((kfpm_ados$y - colMeans(kfpm_ados$yrep))^2)),
+sqrt(mean((kfpm_elr$y - colMeans(kfpm_elr$yrep))^2))
                         )
+
+)
+
+
 ```
+```{r}
+#plot it
+rmse_compare %>% 
+  ggplot(aes(x = type, y = value, color = model, group = model))+
+  geom_point()+
+  geom_line()+
+  theme_classic()
+```
+```{r}
+loo_compare(loo(mlu_realdata_m1),loo(mlu_realdata_m_ados),loo(mlu_realdata_m_ELR))
+```
+
 
 N.B. There are several datasets for this exercise, so pay attention to which one you are using!
 
