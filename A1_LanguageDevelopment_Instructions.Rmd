@@ -1417,9 +1417,124 @@ Relying on the model(s) you trained in part 2 of the exercise, create prediction
 
 - Discuss the differences in performance of your model in training and testing data. Is the model any good?
 - Let's assume you are a speech therapy clinic. You want to assess whether the kids in your test sample will have a typical (like a TD) development, or they will have a worse one, in which case they should get speech therapy support. What do your predictions tell you about that? Which kids would you provide therapy for? Is the model any good?
-
 ```{r}
-
+#we need to check children's ages in the test set to figure out at which mue should they get therapy
+test_Realdata %>% 
+  group_by(SUBJ, VISIT) %>% 
+  summarise(Age) %>% 
+  filter(VISIT == 6) %>% 
+  ggplot(aes(x = as.factor(SUBJ), y = Age))+
+  geom_point()
 
 ```
 
+```{r}
+#Predicting MLU values from first visit
+test_2_Realdata <- test_Realdata %>% 
+  mutate( CHI_MLU = ifelse(VISIT > 1,NaN,CHI_MLU))
+
+test_2_Realdata <- test_2_Realdata %>% 
+  mutate( Predm1 = predict(mlu_realdata_m1, newdata = test_2_Realdata, allow_new_levels = T),
+          Predmados = predict(mlu_realdata_m_ados, newdata = test_2_Realdata, allow_new_levels = T),
+          Predmelr = predict(mlu_realdata_m_ELR, newdata = test_2_Realdata, allow_new_levels = T ))
+```
+
+
+```{r}
+#by visit 6, most kids are older than 40 weeks and according to: :https://speechandlanguageathome.com/blog/out-with-the-baby-talk-up-with-the-mlu#:~:text=12%2D26%20months%3A%20average%20MLU,range%20from%203.0%20to%203.75
+# 35-40 months: average MLU is 3.5, with a range from 3.0 to 3.75
+# 41-46+ months: average MLU is 4.0, with a range from 3.75 to 4.5
+# so we need to see from which starting MLU will children reach this.
+
+# help with real values on the plot
+testhelp <- 
+rbind(
+test_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predm1) %>% 
+  mutate( values = Predm1,
+          mod = "Baseline",
+          SUBJ_mod = paste(as.character(SUBJ), "b",sep = "_")
+          ) %>% 
+  select(-Predm1),
+test_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predmelr) %>% 
+  mutate( values = Predmelr,
+          mod = "ELR",
+          SUBJ_mod = paste(as.character(SUBJ), "elr",sep = "_")
+          ) %>% 
+   select(-Predmelr),
+test_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predmados) %>% 
+  mutate( values = Predmados,
+          mod = "ADOS",
+          SUBJ_mod = paste(as.character(SUBJ), "ados",sep = "_")
+          ) %>% 
+   select(-Predmados)
+)
+#testdata
+# I wrangle the data into ggplot compatibility. I take the 6th visit, +relevant values from models, harmonize names and add a mod column to differentiate. then I bind it vertically.
+# to help visualization I factored Ids by model
+rbind(
+test_2_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predm1) %>% 
+  mutate( values = Predm1,
+          mod = "Baseline",
+          SUBJ_mod = paste(as.character(SUBJ), "b",sep = "_")
+          ) %>% 
+  select(-Predm1),
+test_2_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predmelr) %>% 
+  mutate( values = Predmelr,
+          mod = "ELR",
+          SUBJ_mod = paste(as.character(SUBJ), "elr",sep = "_")
+          ) %>% 
+   select(-Predmelr),
+test_2_Realdata %>% 
+  filter(VISIT == 6) %>% 
+  select(SUBJ,Diagnosis,CHI_MLU,Predmados) %>% 
+  mutate( values = Predmados,
+          mod = "ADOS",
+          SUBJ_mod = paste(as.character(SUBJ), "ados",sep = "_")
+          ) %>% 
+   select(-Predmados)
+) %>% 
+  #general
+  ggplot(aes(y=SUBJ_mod, color = Diagnosis,))+
+  #visualizing values
+         geom_pointrange(fatten = 1/2,aes(x = values[,1], xmin =values[,3],xmax =values[,4]))+
+  geom_errorbar(aes(xmin =values[,3],xmax =values[,4]))+
+  #real 6th visit mlus
+  geom_point(aes(x=testhelp$CHI_MLU, color = "Real MLU"))+
+  #adding the "normal range"
+  geom_rect(aes(ymin = 0,
+                ymax = Inf,
+                  xmin = 3,
+                  xmax = 4.5),
+              fill = "green",
+              alpha = 0.01) +
+  geom_vline(xintercept = 3) +
+  geom_vline(xintercept = 4.5) +
+  #separating children for better plot readability
+  geom_abline(intercept = 3.5,slope =0, alpha= 0.5)+
+   geom_abline(intercept = 6.5,slope =0, alpha= 0.5)+
+   geom_abline(intercept = 9.5,slope =0, alpha= 0.5)+
+   geom_abline(intercept = 12.5,slope =0, alpha= 0.5)+
+  geom_abline(intercept = 15.5,slope =0, alpha= 0.5)+
+  #labels and themes
+  theme_classic()+
+  ylab("ID and model used")+
+  xlab("MLU")+
+  ggtitle("Predicted MLU values for children from the test set")
+
+
+```
+The 95% credibility intervals are too wide to make a decision, so the point estimates were considered.
+With the baseline model, 3 children with autism would be advised to receive speech therapy, 1 out of those 3 would not need it, and none of the typically developing children would be advised to receive speech therapy, even though 2 might need it.
+The model with Ados performs the same.
+With the added measure of linguistic IQ, only the 2 children with autism, who might need it, would be advised to receive speech therapy, and 2 of the typically developing children would be advised to receive speech therapy, who also might need it.
+Based on all methods of model comparison, the model with mean length of utterance, and language expressiveness seems the best for predictions.
