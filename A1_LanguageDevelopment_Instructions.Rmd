@@ -9,12 +9,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-remove.packages(c("Rcpp","dplyr"))
-install.packages(c("Rcpp","dplyr"))
+remove.packages(c("Rcpp","dplyr","rlang"))
+install.packages(c("Rcpp","dplyr","rlang"))
 library(tidyverse)
 library(brms)
 library(gridExtra)
 library(cmdstanr)
+library(tidymodels)
 ```
 
 # Assignment 1  - Language development in autistic and neurotypical children
@@ -1328,7 +1329,9 @@ Realdata_pred <- Realdata %>%
           Predmelr = predict(mlu_realdata_m_ELR, newdata = Realdata, allow_new_levels = T )) %>% 
   drop_na(CHI_MLU)
 
+```
 
+```{r}
 #importing new data
 
 test_Realdata <- cleanthat(read_csv("demo_test.csv"),
@@ -1340,22 +1343,32 @@ test_Realdata<- test_Realdata %>%
   mutate(Age = ifelse(Age > 999,Age/100,Age/10))
 test_Realdata[20,7] <- 23.0
 
-#standardizing variables
+#standardizing variables with tidymodels. The scale of the model should be used on the test set, since standardizing the data makes it specific to the data set.
+#we need the unstandardized real data, and I don't want to reload everything again
+Realdata_2 <- read_csv("comb_data.csv")
 
-test_Realdata <- test_Realdata %>% mutate_at(c("ADOS",
-                                     "MullenRaw",
-                                     "ExpressiveLangRaw",
-                                     "Socialization",
-                                     "MOT_MLU",
-                                     "types_MOT",
-                                     "tokens_MOT"), ~(scale(.) %>% as.vector))
+rec_stan <- Realdata_2 %>% 
+  recipe(CHI_MLU ~ .) %>% 
+  step_scale(ADOS, MullenRaw, ExpressiveLangRaw, Socialization) %>% 
+  step_center(ADOS, MullenRaw, ExpressiveLangRaw, Socialization) %>% 
+  prep(training = Realdata_2, retain = T)
 
+
+test_Realdata_s <- bake(rec_stan, new_data = teszt_test_Realdata)
+#individual ids were lost and I like those
+test_Realdata_s$ID <- test_Realdata$ID
+
+
+```
+
+```{r}
+set.seed(3)
 #creating predictions from the test set
-test_Realdata <- test_Realdata %>% 
-  mutate( Predm1 = predict(mlu_realdata_m1, newdata = test_Realdata, allow_new_levels = T),
-          Predmados = predict(mlu_realdata_m_ados, newdata = test_Realdata, allow_new_levels = T),
-          Predmelr = predict(mlu_realdata_m_ELR, newdata = test_Realdata, allow_new_levels = T )) %>% 
-  drop_na(CHI_MLU)
+test_Realdata <- test_Realdata_s %>% 
+  mutate( Predm1 = predict(mlu_realdata_m1, newdata = test_Realdata_s, allow_new_levels = T),
+          Predmados = predict(mlu_realdata_m_ados, newdata = test_Realdata_s, allow_new_levels = T),
+          Predmelr = predict(mlu_realdata_m_ELR, newdata = test_Realdata_s, allow_new_levels = T )) %>% 
+  drop_na(CHI_MLU) # removing a visit without measure MLU, since we have no comaprison
 
 #cross validation
 kfoldm1 <- kfold(mlu_realdata_m1, folds = "stratified", group = "SUBJ", K= 5, save_fits = T)
@@ -1401,6 +1414,7 @@ rmse_compare %>%
   theme_classic()
 ```
 ```{r}
+set.seed(3)
 loo_compare(loo(mlu_realdata_m1),loo(mlu_realdata_m_ados),loo(mlu_realdata_m_ELR))
 ```
 
@@ -1429,6 +1443,7 @@ test_Realdata %>%
 ```
 
 ```{r}
+set.seed(3)
 #Predicting MLU values from first visit
 test_2_Realdata <- test_Realdata %>% 
   mutate( CHI_MLU = ifelse(VISIT > 1,NaN,CHI_MLU))
@@ -1533,8 +1548,21 @@ test_2_Realdata %>%
 
 
 ```
-The 95% credibility intervals are too wide to make a decision, so the point estimates were considered.
-With the baseline model, 3 children with autism would be advised to receive speech therapy, 1 out of those 3 would not need it, and none of the typically developing children would be advised to receive speech therapy, even though 2 might need it.
-The model with Ados performs the same.
-With the added measure of linguistic IQ, only the 2 children with autism, who might need it, would be advised to receive speech therapy, and 2 of the typically developing children would be advised to receive speech therapy, who also might need it.
-Based on all methods of model comparison, the model with mean length of utterance, and language expressiveness seems the best for predictions.
+With the point estimates:
+The baseline model would miscategorise 3 children.
+The ados model would miscategorise 3 children.
+The ELr model would miscategorize 2 children.
+I also like, that the elr model's 95% credibility intervals are not touching the "normal" range, meaning the model is telling, these children definitely need speech therapy. The other two models are not so definitive.
+After all these comparative and predictive methods, I would choose the model with MLU and ELR values.
+
+## speech clinic roleplay
+```{r}
+#if I run a speech clinic, I should have at least some tables so that I can evaluate children on the go
+
+#possible first visit mlu values range from
+max(Realdata$CHI_MLU)
+
+
+```
+
+
