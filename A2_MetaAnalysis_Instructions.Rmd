@@ -378,7 +378,10 @@ parameters %>%
              linetype = 2)+
   #change lables
   scale_y_continuous(breaks = c(round(min(parameters$Q2.5),2),
-                                round(max(parameters$Q97.5),2)))
+                                round(max(parameters$Q97.5),2),
+                                .4,
+                                .5,
+                                .6))
 
 ```
 
