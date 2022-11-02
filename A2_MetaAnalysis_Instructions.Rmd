@@ -225,9 +225,161 @@ diff_df %>%
   ggplot(aes(x=Betas))+
          geom_pointrange(fatten = 1/2,aes(y = Estimate, ymin =Q2.5,ymax = Q97.5))+
   geom_abline(linetype = 2,intercept = 0,slope = 0)+
-  ylim(-0.15,0.5)+
-  theme_classic()
+  geom_rect(aes(
+    ymin = diff_df[2,5],
+    ymax = diff_df[1,4],
+    xmin = 0,
+    xmax = Inf,
+  ), alpha =  .1, fill = "red")+
+  ylim(-0.15,0.7)+
+  theme_classic() +
+  ggtitle("Effect estimates with 95% credibility intervals")
 
 
 ```
+```{r}
+set.seed(3)
+#are they even the same distribution?
+#visualize all posterior draws
+post_diff <- rbind(
+sim_m1 %>% 
+  as_draws_df() %>% #takes estimates from model
+  as.data.frame() %>% #datarames the matrix
+  rownames_to_column("Chain") %>% 
+  select(b_Intercept) %>% 
+  mutate(set = "ALL"),
+sim_m1_bias %>% 
+  as_draws_df() %>% #takes estimates from model
+  as.data.frame() %>% #datarames the matrix
+  rownames_to_column("Chain") %>% 
+  select(b_Intercept) %>% 
+  mutate(set = "BIASED")
+) 
+post_diff%>% 
+  ggplot(aes(x = b_Intercept, fill = set))+
+  geom_density(alpha=.5)+
+  theme_classic()+
+  xlab("posteriors")+
+  ylab("")+
+  ggtitle("Comparing model posteriors")
+
+```
+### 1.e 
+BONUS question: do a power/precision analysis: w this kind of sample sizes (participants) how many studies would you need to acquire good precision (e.g. .1 sd in the pop level estimate)
+
+```{r}
+#power analysis, we aim to reach at least 0.2 80 out of 100 seeds
+
+#sim function
+sim_meta <- function(seed,n){
+  
+  set.seed(seed)
+  #making a df
+sim_meta_df <- tibble( ID = rep(1:(5*n)),
+                       participants = as.integer(rtruncnorm(5*n, mean = 20, sd= 10, a = 10)),
+                       effect_no_error = rnorm(5*n,0.4,0.4),
+                       effectmu = NA,
+                       effectsigma = NA
+  
+)
+# i don´t know how to do it in tidyverse so base R it is
+for (i in 1:(5*n)){
+
+sampling <- rnorm(sim_meta_df$participants[i],sim_meta_df$effect_no_error[i],.8)
+
+sim_meta_df$effectmu[i] <- mean(sampling)
+sim_meta_df$effectsigma[i] <- sd(sampling)/sqrt(sim_meta_df$participants[i])
+}
+
+sim_meta_bias_df <- sim_meta_df 
+
+for (i in 1:(5*n)) {
+  
+  sim_meta_bias_df$published[i] <- ifelse(abs(sim_meta_bias_df$effectmu[i]) - 
+                                            2*sim_meta_bias_df$effectsigma[i]
+                                          > 0, rbinom(1,1,.9), rbinom(1,1,.1))
+}
+
+sim_meta_bias_df <- sim_meta_bias_df %>% 
+  filter(published == 1)
+sim_meta_bias_df_f <- sim_meta_bias_df[1:n,]
+
+}
+
+```
+
+```{r}
+#making a nested dataframe with the models
+
+# how many simulations would you like?
+n_sim <- 100
+
+# this will help us track time
+t1 <- Sys.time()
+
+# here's the main event!
+s <-
+  tibble(seed = 1:n_sim) %>% 
+  mutate(sim_meta_bias_df_f = map(seed, sim_meta, n = 100)) %>% 
+  mutate(sim_m1_bias = map2(sim_meta_bias_df_f, seed, ~update(sim_m1_bias, newdata = .x, seed = .y)))
+
+t2 <- Sys.time()
+```
+
+```{r}
+#extract 95% credibility intervals and estimates
+parameters <-
+  s %>% 
+  mutate(asdslope = map(sim_m1_bias, ~ fixef(.) %>% 
+                           data.frame() %>% 
+                           rownames_to_column("parameter"))
+         ) %>% 
+  unnest(asdslope)%>% 
+  select(-sim_meta_bias_df_f, -sim_m1_bias)
+
+
+#Visualize it
+parameters<-parameters %>% 
+
+  #we summarize based on the variables we need to insert into the ggplot geom_pointrange
+  mutate( power = ifelse( Q2.5 > 0.2,1,0)) 
+# we calculate powwer
+
+parameters %>% 
+  ggplot(aes(x=seed)) +
+  geom_pointrange(fatten = 1/2,aes(y = Estimate ,ymin = Q2.5, ymax = Q97.5))+
+  geom_hline(linetype = 2, yintercept = 0.2)+
+  #geom_pointrange is specified
+  labs(x = "seed (i.e., simulation index)",
+       y = " ",
+       #additional labs
+       subtitle = str_glue("100 Biased studies, power = {mean(parameters$power)}"))
+```
+```{r}
+#now check precision
+parameters <- parameters %>% 
+  mutate(prec = Q97.5 - Q2.5,
+         check = ifelse(prec < 0.2,1,0))
+
+parameters %>% 
+  ggplot(aes(x=reorder(seed, Q2.5))) +
+  geom_pointrange(fatten = 1/2,aes(y = Estimate ,ymin = Q2.5, ymax = Q97.5))+
+  #geom_pointrange is specified
+  labs(x = " ",
+       y = " ",
+       #additional labs
+       subtitle = str_glue("100 Biased studies, precision with a 0.2 criteria = {mean(parameters$check)}"))+
+  #remove annoying x axis labels 
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()
+        )+
+  #add lines to show range of possible values
+  geom_hline(yintercept = c(min(parameters$Q2.5),max(parameters$Q97.5)),
+             linetype = 2)+
+  #change lables
+  scale_y_continuous(breaks = c(round(min(parameters$Q2.5),2),
+                                round(max(parameters$Q97.5),2)))
+
+```
+
 
