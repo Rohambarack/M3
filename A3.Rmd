@@ -1,0 +1,36 @@
+---
+title: "Untitled"
+author: "Balazs Szabo"
+date: "2022-11-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+remove.packages(c("Rcpp","dplyr","rlang"))
+install.packages(c("Rcpp","dplyr","rlang"))
+library(tidyverse)
+library(brms)
+library(gridExtra)
+library(cmdstanr)
+library(tidymodels)
+library(truncnorm)
+```
+## Part I - Simulating data
+
+Use the meta-analysis reported in Parola et al (2020), create a simulated dataset with 100 matched pairs of schizophrenia and controls, each participant producing 10 repeated measures (10 trials with their speech recorded). for each of these "recordings" (data points) produce 10 acoustic measures: 6 from the meta-analysis, 4 with just random noise. Do the same for a baseline dataset including only 10 noise variables. Tip: see the slides for the code. 
+
+```{r}
+n = 100
+simdata <-
+  tibble(
+    ID = rep(rep(seq(1,n), each = 10),2),
+    Diagnosis = rep(c("Schizophrenia","Control"), each = n*10),
+    Trial = rep(seq(1,10), n*2),
+    
+  )
+```
+

@@ -384,5 +384,224 @@ parameters %>%
                                 .6))
 
 ```
+## Exercise 2
 
+2. What is the current evidence for distinctive vocal patterns in schizophrenia? 
+Use the data from Parola et al (2020) - https://www.dropbox.com/s/0l9ur0gaabr80a8/Matrix_MetaAnalysis_Diagnosis_updated290719.xlsx?dl=0 - focusing on pitch variability (PITCH_F0SD).  Describe the data available (studies, participants). Using the model from question 1 analyze the data, visualize and report the findings: population level effect size; how well studies reflect it; influential studies, publication bias. 
+BONUS question: assess the effect of task on the estimates (model comparison with baseline model)
+
+```{r}
+meta_realdata <- readxl::read_excel("meta_meta_meta.xlsx")
+
+#get out relevant studies... we have 8.....
+meta_clean <- meta_realdata %>% 
+  select(StudyID,
+         Article,
+         PITCH_F0SD_SZ_M,PITCH_F0SD_SZ_SD, SAMPLE_SIZE_SZ,
+         PITCH_F0SD_HC_M, PITCH_F0SD_HC_SD,SAMPLE_SIZE_HC) %>% 
+  drop_na(PITCH_F0SD_SZ_M,PITCH_F0SD_SZ_SD,PITCH_F0SD_HC_M)
+#convert it to the cohen´s d scale (effectmu),
+#add participants,
+
+meta_clean
+
+meta_clean <- meta_clean %>% 
+  mutate( participants_sz = SAMPLE_SIZE_SZ,
+          participants_hc = SAMPLE_SIZE_HC,
+          
+          effectmu = (PITCH_F0SD_SZ_M - PITCH_F0SD_HC_M)/
+            sqrt(((PITCH_F0SD_SZ_SD^2)+(PITCH_F0SD_HC_SD^2))/2),
+          effectsigma = ((participants_hc + participants_sz) / (participants_hc * participants_sz)
+          + (effectmu^2/(2*(participants_hc + participants_sz - 2))))
+           * (participants_hc + participants_sz) / (participants_hc + participants_sz - 2),
+          ID = StudyID,
+          participants = participants_hc+participants_sz,
+          sd = effectsigma * sqrt(participants))%>% 
+  select(ID,effectmu,effectsigma, participants, sd)
+
+#solve multiple IDs
+
+meta_clean <- meta_clean %>%
+  group_by(ID) %>%
+  mutate(Count = row_number()) %>%
+  ungroup() %>%
+  mutate(ID = ifelse(Count > 1, ID + 100, ID)) %>%
+  select(-Count)
+```
+```{r}
+#modeling with real studies
+
+#model
+
+set.seed(3)
+#pp check
+
+sim_m_real_pp <- brm(
+  sim_formula,
+  data= meta_clean,
+  prior = sim_prior,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(sim_m_real_pp,ndraws = 100)
+
+#fit
+sim_m_real <- brm(
+  sim_formula,
+  data= meta_clean,
+  prior = sim_prior,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+#pp check 2
+pp_check(sim_m_real,ndraws = 100)
+#update plots
+post_sim_Real <- as_draws_df(sim_m_real)
+
+grid.arrange(
+ggplot(post_sim_Real) +
+  geom_density(aes(prior_Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept') +
+  theme_classic(),
+
+ggplot(post_sim_Real) +
+  geom_density(aes(prior_sd_ID), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_ID__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('sd') +
+  theme_classic()
+)
+
+#summary
+print(sim_m_real)
+
+```
+```{r}
+#modeling with real studies and adjusted priors
+
+
+sim_prior2 <- c(
+  prior(normal(0,.3), class = Intercept),
+  prior(normal(0,.9), class = sd)
+)
+#model
+
+set.seed(3)
+#pp check
+
+sim_m_real_pp2 <- brm(
+  sim_formula,
+  data= meta_clean,
+  prior = sim_prior2,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(sim_m_real_pp2,ndraws = 100)
+
+#fit
+sim_m_real2 <- brm(
+  sim_formula,
+  data= meta_clean,
+  prior = sim_prior2,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+#pp check 2
+pp_check(sim_m_real2,ndraws = 100)
+#update plots
+post_sim_Real <- as_draws_df(sim_m_real2)
+
+grid.arrange(
+ggplot(post_sim_Real) +
+  geom_density(aes(prior_Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept') +
+  theme_classic(),
+
+ggplot(post_sim_Real) +
+  geom_density(aes(prior_sd_ID), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_ID__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('sd') +
+  theme_classic()
+)
+
+#summary
+print(sim_m_real2)
+
+```
+
+```{r}
+#visualizing estimates
+
+sim_m_real2 %>% 
+  fixef() %>% #takes estimates from model
+  as.data.frame() %>% #datarames the matrix
+  rownames_to_column("Betas") %>% #makes the first column a data frame column
+  ggplot(aes(x=Betas))+
+         geom_pointrange(fatten = 1/2,aes(y = Estimate, ymin =Q2.5,ymax = Q97.5))+
+  geom_abline(linetype = 2,intercept = 0,slope = 0)+
+  ylim(-1,1)+
+  theme_classic()
+
+```
+
+```{r}
+#plots
+#get quantiles from distributions
+meta_teszt <- meta_clean %>% 
+  mutate( Q2.5 = qnorm(.025,effectmu,sd),
+          Q97.5 = qnorm(.975,effectmu,sd)
+  )
+#append model estimate
+
+meta_teszt <- rbind(sim_m_real %>% 
+  fixef() %>% #takes estimates from model
+  as.data.frame() %>% #datarames the matrix
+  rownames_to_column("Betas") %>% 
+  rename(ID = Betas,
+         effectmu = Estimate) %>%
+  mutate( ID = 0,
+          effectsigma = NA,
+          participants = NA,
+          sd = NA) %>% 
+  select(-Est.Error, ID, effectmu,effectsigma,participants,sd,Q2.5,Q97.5),
+meta_teszt)
+  
+meta_teszt %>% 
+  ggplot(aes(y = as.factor(ID)))+
+  geom_pointrange(fatten = .5, aes(x = effectmu, xmin = Q2.5, xmax = Q97.5))+
+  geom_errorbar(aes(xmin = Q2.5, xmax = Q97.5)) +
+  geom_vline(linetype = 2, xintercept = 0) +
+  geom_rect(aes(ymin = 0,
+                ymax = Inf,
+                xmin = meta_teszt[1,3],
+                xmax = meta_teszt[1,4],
+                fill = "red"), alpha =.05)
+  theme_classic()+
+    ylab(" ")+
+    xlab(" ")
+  
+```
 
