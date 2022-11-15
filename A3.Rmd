@@ -24,13 +24,85 @@ library(truncnorm)
 Use the meta-analysis reported in Parola et al (2020), create a simulated dataset with 100 matched pairs of schizophrenia and controls, each participant producing 10 repeated measures (10 trials with their speech recorded). for each of these "recordings" (data points) produce 10 acoustic measures: 6 from the meta-analysis, 4 with just random noise. Do the same for a baseline dataset including only 10 noise variables. Tip: see the slides for the code. 
 
 ```{r}
+#number of participants
 n = 100
-simdata <-
+
+#effect means
+Informed_effect_mean <- c(.25,-.55,-.75,-1.26,.05,1.89,0,0,0,0)
+Skeptic_effect_mean <- rep(0,10)
+
+#individual sds
+Individual_sd <- 1
+Trial_sd <- .5
+Error <- .2
+  
+  
+#simulate it 
+inf_simdata <-
   tibble(
     ID = rep(rep(seq(1,n), each = 10),2),
     Diagnosis = rep(c("Schizophrenia","Control"), each = n*10),
-    Trial = rep(seq(1,10), n*2),
-    
+    Trial = rep(seq(1,10), n*2)
   )
+
+
+#figuring out a solution
+ teszt <- tibble(
+    ID = rep(rep(seq(1,n), each = 10),2),
+    Diagnosis = rep(c("Schizophrenia","Control"), each = n*10),
+    Trial = rep(seq(1,10), n*2)
+  )
+  #  the mapply function applies the rnorm to get one value, 100 times, eith the means of 3 different groups a 100 times. so it will return 100 random values for the 3 different means, but since we need 10 to be the same, because it is the "true" value for the participants, we rep each 10 times.
+  teszt2 <- rep(mapply(rnorm, n = rep(1,100), mean = rep(c(0,100,1000), each = 100), sd = Individual_sd), each = 10)
+  
+  #the 3000 element vector then gets turned into a matrix with 3 1000 long columns
+  teszt3 <- as.data.frame(matrix(teszt2,ncol =3,byrow = F))
+  #because the true effect is the same for the two parts of the control group, we bind it with itself
+  teszt4 <- rbind(teszt3,teszt3)
+# we add the columns to the existing dataframe
+teszt <- teszt %>% 
+     tibble::add_column(!!!set_names(teszt4,
+                                     nm=c("vt1","vt2","vt3")))
+
+
+
+```
+```{r}
+# Ricardos code for reference
+
+for (i in seq(10)){
+  
+  ric_temp <- tibble(
+    ID = seq(n),
+    Trueffect = rnorm(n, Informed_effect_mean[i], Individual_sd),
+    Variale = paste0("v",i)
+  )
+  if (i==1){
+    d_ric <- ric_temp
+    }else{
+      d_ric <- rbind(d_ric,ric_temp)
+    }
+  
+}
+```
+
+```{r}
+set.seed(3)
+#continue the simulation
+
+#  the mapply function applies the rnorm to get one value, 100 times, eith the means of 3 different groups a 100 times. so it will return 100 random values for the 10 different means, but since we need 10 to be the same, because it is the "true" value for the participants, we rep each 10 times.
+  inf_help1 <- rep(mapply(rnorm, n = rep(1,100), mean = rep(Informed_effect_mean, each = 100), sd = Individual_sd), each = 10)
+  
+  #the 3000 element vector then gets turned into a matrix with 10,  1000 long columns
+  inf_help2 <- as.data.frame(matrix(inf_help1,ncol =10,byrow = F))
+  #because the true effect is the same for the two parts of the control group, we bind it with itself
+  inf_help3 <- rbind(inf_help2,inf_help2)
+# we add the columns to the existing dataframe
+inf_simdata <- inf_simdata %>% 
+     tibble::add_column(!!!set_names(inf_help3,
+                                     nm=c("vt1","vt2","vt3","vt4","vt5",
+                                          "vt6","vt7","vt8","vt9","vt10")))
+
+
 ```
 
