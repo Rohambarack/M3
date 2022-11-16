@@ -67,24 +67,6 @@ teszt <- teszt %>%
 
 
 ```
-```{r}
-# Ricardos code for reference
-
-for (i in seq(10)){
-  
-  ric_temp <- tibble(
-    ID = seq(n),
-    Trueffect = rnorm(n, Informed_effect_mean[i], Individual_sd),
-    Variale = paste0("v",i)
-  )
-  if (i==1){
-    d_ric <- ric_temp
-    }else{
-      d_ric <- rbind(d_ric,ric_temp)
-    }
-  
-}
-```
 
 ```{r}
 set.seed(3)
@@ -105,4 +87,155 @@ inf_simdata <- inf_simdata %>%
 
 
 ```
+
+
+```{r}
+#now lets figure out how to make the test differences
+set.seed(3)
+for (i in seq(nrow(teszt))){
+  
+  teszt$v1[i] <- ifelse(teszt$Diagnosis[i] == "Schizophrenia",
+                    rnorm(1,rnorm(1,teszt$vt1[i]/2,Trial_sd),Error),
+                    rnorm(1,rnorm(1,(-teszt$vt1[i])/2,Trial_sd),Error))
+  
+}
+
+
+teszt <- teszt %>% 
+  rowwise() %>% 
+  mutate( v1_s = ifelse(Diagnosis == "Schizophrenia",
+                    rnorm(1,rnorm(1,vt1/2,Trial_sd),Error),
+                    rnorm(1,rnorm(1,(-vt1)/2,Trial_sd),Error)))
+
+
+teszt_fax <- teszt %>% 
+  rowwise() %>% 
+  mutate(across( .cols =  starts_with("vt"), ~ ifelse(Diagnosis == "Schizophrenia",
+                    rnorm(1,rnorm(1,./2,Trial_sd),Error),
+                    rnorm(1,rnorm(1,(-.)/2,Trial_sd),Error)),
+         ))
+```
+
+```{r}
+
+simulate_sci <- function(n,Informed_effect_mean,Individual_sd,Trial_sd){
+  set.seed(3)
+  
+  #simulate it 
+inf_simdata <-
+  tibble(
+    ID = rep(rep(seq(1,n), each = 10),2),
+    Diagnosis = rep(c("Schizophrenia","Control"), each = n*10),
+    Trial = rep(seq(1,10), n*2)
+  )
+
+  #  the mapply function applies the rnorm to get one value, 100 times, eith the means of 3 different groups a 100 times. so it will return 100 random values for the 10 different means, but since we need 10 to be the same, because it is the "true" value for the participants, we rep each 10 times.
+  inf_help1 <- rep(mapply(rnorm, n = rep(1,100), mean = rep(Informed_effect_mean, each = 100), sd = Individual_sd), each = 10)
+  
+  #the 3000 element vector then gets turned into a matrix with 10,  1000 long columns
+  inf_help2 <- as.data.frame(matrix(inf_help1,ncol =10,byrow = F))
+  #because the true effect is the same for the two parts of the control group, we bind it with itself
+  inf_help3 <- rbind(inf_help2,inf_help2)
+# we add the columns to the existing dataframe
+inf_simdata <- inf_simdata %>% 
+     tibble::add_column(!!!set_names(inf_help3,
+                                     nm=c("vt1","vt2","vt3","vt4","vt5",
+                                          "vt6","vt7","vt8","vt9","vt10")))
+
+inf_simdata <- inf_simdata %>% 
+  rowwise() %>% 
+  mutate(across( .cols =  starts_with("vt"), ~ ifelse(Diagnosis == "Schizophrenia",
+                    rnorm(1,rnorm(1,./2,Trial_sd),Error),
+                    rnorm(1,rnorm(1,(-.)/2,Trial_sd),Error)),
+         ))
+  
+return(inf_simdata)
+  
+}
+
+```
+
+```{r}
+
+inf_simdata <- simulate_sci(100,Informed_effect_mean,Individual_sd,Trial_sd)
+skep_simdata <- simulate_sci(100,Skeptic_effect_mean,Individual_sd,Trial_sd)
+```
+
+```{r}
+#visualize it
+
+#wrangle it first
+teszt_fax_2 <- teszt_fax[,1:4] %>% 
+  mutate( Predictor = "v1") %>% 
+  rename(Value = "vt1")
+
+#so 
+
+
+
+for (i in seq(ncol(inf_simdata)-3)){
+  
+  temp_inf <- inf_simdata[,c(1:3,(i+3))] %>% 
+  mutate( Predictor = as.character(colnames(inf_simdata[(i+3)]))
+          ) %>% 
+  rename(Value = colnames(inf_simdata[(i+3)])
+           )
+  if (i == 1){
+    
+    inf_vis <- temp_inf
+    
+  }else{
+    inf_vis <- rbind(inf_vis,temp_inf)
+  }
+  
+}
+
+
+for (i in seq(ncol(skep_simdata)-3)){
+  
+  temp_skep <- skep_simdata[,c(1:3,(i+3))] %>% 
+  mutate( Predictor = as.character(colnames(skep_simdata[(i+3)]))
+          ) %>% 
+  rename(Value = colnames(skep_simdata[(i+3)])
+           )
+  if (i == 1){
+    
+    skep_vis <- temp_skep
+    
+  }else{
+    skep_vis <- rbind(skep_vis,temp_skep)
+  }
+  
+}
+```
+```{r}
+#now visualize it
+
+grid.arrange(
+  
+inf_vis %>% 
+  ggplot(aes(x=Value, fill = Diagnosis, group = Diagnosis))+
+  geom_density(alpha=.5)+
+  scale_fill_manual(values = c("#3cb44b","#dcbeff"))+
+  facet_wrap(~Predictor)+
+  ylab("")+
+  ggtitle("Informed")+
+  theme(axis.text.y=element_blank(), #remove x axis labels
+        axis.ticks.y=element_blank()
+        ), #remove x axis ticks,
+
+skep_vis %>% 
+  ggplot(aes(x=Value, fill = Diagnosis, group = Diagnosis))+
+  geom_density(alpha=.5)+
+  scale_fill_manual(values = c("#3cb44b","#dcbeff"))+
+  facet_wrap(~Predictor)+
+  ylab("")+
+  ggtitle("Noise")+
+  theme(axis.text.y=element_blank(), #remove x axis labels
+        axis.ticks.y=element_blank()
+        )
+)
+```
+
+
 
