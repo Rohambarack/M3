@@ -321,7 +321,7 @@ mlu_m2 <- brm(
   )
 
 pp_check(mlu_m1, ndraws = 100)
-  
+
   
 ```
 - model quality checks: traceplots, divergences, rhat, effective samples
@@ -381,6 +381,59 @@ ggplot(post_mlu_m1) +
   theme_classic()
 
 ```
+```{r}
+#Sample the parameters of interest:
+post_mlu_m1 <- as_draws_df(mlu_m2)
+grid.arrange(
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_b_groupasd), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_groupasd), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept for asd') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_b_grouptd), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_grouptd), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Inercept for td') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(`prior_b_groupasd:visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_groupasd:visit`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('asd change by visit') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(`prior_b_grouptd:visit`), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(`b_grouptd:visit`), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('td change by visit') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_sd_id__Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_id__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individual intercepts') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_sd_id__visit), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_id__visit), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('individial slopes') +
+  theme_classic(),
+
+ggplot(post_mlu_m1) +
+  geom_density(aes(prior_cor_id), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(cor_id__Intercept__visit), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('correlation') +
+  theme_classic()
+)
+
+```
+```{r}
+set.seed(3)
+hypothesis(mlu_m2, "groupasd:visit < grouptd:visit")
+```
+
 ```{r}
 summary(mlu_m2)
 ```
@@ -1353,7 +1406,7 @@ rec_stan <- Realdata_2 %>%
   step_center(ADOS, MullenRaw, ExpressiveLangRaw, Socialization) %>% 
   prep(training = Realdata_2, retain = T)
 
-
+Realdata_2 <- bake(rec_stan, Realdata_2)
 test_Realdata_s <- bake(rec_stan, new_data = test_Realdata)
 #individual ids were lost and I like those
 test_Realdata_s$ID <- test_Realdata$ID

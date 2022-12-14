@@ -64,7 +64,7 @@ set.seed(3)
 #model
 sim_formula <- effectmu | se(effectsigma) ~ 1 + (1|ID)
 #priors
-#get_prior(sim_formula,sim_meta_df)
+get_prior(sim_formula,sim_meta_df)
 
 sim_prior <- c(
   prior(normal(0,.3), class = Intercept),
@@ -133,6 +133,9 @@ sim_m1 %>%
   ylim(-0.15,0.5)+
   theme_classic()
 
+```
+```{r}
+summary(sim_m1)
 ```
 
 ### 1.c adding publication bias
@@ -320,7 +323,7 @@ t1 <- Sys.time()
 # here's the main event!
 s <-
   tibble(seed = 1:n_sim) %>% 
-  mutate(sim_meta_bias_df_f = map(seed, sim_meta, n = 100)) %>% 
+  mutate(sim_meta_bias_df_f = map(seed, sim_meta, n = 15)) %>% 
   mutate(sim_m1_bias = map2(sim_meta_bias_df_f, seed, ~update(sim_m1_bias, newdata = .x, seed = .y)))
 
 t2 <- Sys.time()
@@ -353,7 +356,7 @@ parameters %>%
   labs(x = "seed (i.e., simulation index)",
        y = " ",
        #additional labs
-       subtitle = str_glue("100 Biased studies, power = {mean(parameters$power)}"))
+       subtitle = str_glue("15 Biased studies, power = {mean(parameters$power)}"))
 ```
 ```{r}
 #now check precision
@@ -368,7 +371,7 @@ parameters %>%
   labs(x = " ",
        y = " ",
        #additional labs
-       subtitle = str_glue("100 Biased studies, precision with a 0.2 criteria = {mean(parameters$check)}"))+
+       subtitle = str_glue("30 Biased studies, precision with a 0.2 criteria = {mean(parameters$check)}"))+
   #remove annoying x axis labels 
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank()
@@ -409,11 +412,13 @@ meta_clean <- meta_clean %>%
   mutate( participants_sz = SAMPLE_SIZE_SZ,
           participants_hc = SAMPLE_SIZE_HC,
           
-          effectmu = (PITCH_F0SD_SZ_M - PITCH_F0SD_HC_M)/
+          effectmu = (PITCH_F0SD_HC_M - PITCH_F0SD_SZ_M)/
             sqrt(((PITCH_F0SD_SZ_SD^2)+(PITCH_F0SD_HC_SD^2))/2),
+          
           effectsigma = ((participants_hc + participants_sz) / (participants_hc * participants_sz)
           + (effectmu^2/(2*(participants_hc + participants_sz - 2))))
            * (participants_hc + participants_sz) / (participants_hc + participants_sz - 2),
+          
           ID = StudyID,
           participants = participants_hc+participants_sz,
           sd = effectsigma * sqrt(participants))%>% 
@@ -428,6 +433,21 @@ meta_clean <- meta_clean %>%
   mutate(ID = ifelse(Count > 1, ID + 100, ID)) %>%
   select(-Count)
 ```
+```{r}
+#compare participant sizes
+
+grid.arrange(
+  meta_clean %>% 
+    ggplot(aes(x = participants))+
+    ggtitle("Empiric")+
+    geom_density(),
+   sim_meta_bias_df %>% 
+    ggplot(aes(x = participants))+
+    ggtitle("Simulation")+
+    geom_density()
+)
+```
+
 ```{r}
 #modeling with real studies
 
@@ -551,6 +571,11 @@ ggplot(post_sim_Real) +
 print(sim_m_real2)
 
 ```
+```{r}
+set.seed(3)
+hypothesis(sim_m_real2,"Intercept > 0")
+```
+
 
 ```{r}
 #visualizing estimates
@@ -562,7 +587,7 @@ sim_m_real2 %>%
   ggplot(aes(x=Betas))+
          geom_pointrange(fatten = 1/2,aes(y = Estimate, ymin =Q2.5,ymax = Q97.5))+
   geom_abline(linetype = 2,intercept = 0,slope = 0)+
-  ylim(-1,1)+
+  ylim(-.6,.6)+
   theme_classic()
 
 ```
@@ -600,8 +625,169 @@ meta_teszt %>%
                 xmax = meta_teszt[1,4],
                 fill = "red"), alpha =.05)
   theme_classic()+
-    ylab(" ")+
-    xlab(" ")
+    ylab("")+
+    xlab("")
   
+```
+```{r}
+library("meta")
+```
+
+```{r}
+meta_fun <- rbind(meta_clean,c(0,-.29,max(meta_clean$effectsigma),1,1))
+meta_fun <- rbind(meta_fun,c(0,.52,max(meta_clean$effectsigma),1,1))
+meta_fun <- rbind(meta_fun,c(0,.11,0,11))
+
+meta_fun$alpha <- ifelse(meta_fun$ID == 0, 0.00001, 1)
+
+meta_fun %>% 
+ggplot(aes(y=effectsigma, x = effectmu,group = ID,label = ID))+
+  geom_point(aes(alpha=alpha))+ geom_line(linetype = 2)+
+   geom_text(aes(label=ifelse((effectmu > .53 | effectmu < -0.3 ),
+                              ID,'')),hjust=0,vjust=0)+
+  scale_y_reverse()+
+  geom_vline(xintercept = 0.11,linetype = 1) + 
+  coord_cartesian(ylim = c(max(meta_clean$effectsigma),0), xlim = c(-4,2)) + 
+  theme_bw()
+  
+```
+# Bonus
+model comp by task
+```{r}
+#get out relevant studies... we have 8.....
+meta_clean <- meta_realdata %>% 
+  select(StudyID,
+         Article,
+         PITCH_F0SD_SZ_M,PITCH_F0SD_SZ_SD, SAMPLE_SIZE_SZ,
+         PITCH_F0SD_HC_M, PITCH_F0SD_HC_SD,SAMPLE_SIZE_HC,
+         TYPE_OF_TASK) %>% 
+  drop_na(PITCH_F0SD_SZ_M,PITCH_F0SD_SZ_SD,PITCH_F0SD_HC_M)
+#convert it to the cohen´s d scale (effectmu),
+#add participants,
+
+meta_clean
+
+meta_clean <- meta_clean %>% 
+  mutate( participants_sz = SAMPLE_SIZE_SZ,
+          participants_hc = SAMPLE_SIZE_HC,
+          
+          effectmu = (PITCH_F0SD_HC_M - PITCH_F0SD_SZ_M)/
+            sqrt(((PITCH_F0SD_SZ_SD^2)+(PITCH_F0SD_HC_SD^2))/2),
+          
+          effectsigma = ((participants_hc + participants_sz) / (participants_hc * participants_sz)
+          + (effectmu^2/(2*(participants_hc + participants_sz - 2))))
+           * (participants_hc + participants_sz) / (participants_hc + participants_sz - 2),
+          
+          ID = StudyID,
+          participants = participants_hc+participants_sz,
+          sd = effectsigma * sqrt(participants))%>% 
+  select(ID,effectmu,effectsigma, participants, sd,  TYPE_OF_TASK)
+
+#solve multiple IDs
+
+meta_clean <- meta_clean %>%
+  group_by(ID) %>%
+  mutate(Count = row_number()) %>%
+  ungroup() %>%
+  mutate(ID = ifelse(Count > 1, ID + 100, ID)) %>%
+  select(-Count)
+```
+
+```{r}
+set.seed(3)
+#model
+task_formula <- effectmu | se(effectsigma) ~ 1 + TYPE_OF_TASK + (1|ID)
+
+#priors
+tsim_prior2 <- c(
+  prior(normal(0,.3), class = Intercept),
+  prior(normal(0,.9), class = sd),
+  prior(normal(0,.3), class = b)
+)
+
+task_m_real_pp2 <- update(sim_m_real_pp2,
+  task_formula,
+  newdata= meta_clean,
+  prior = tsim_prior2,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(task_m_real_pp2,ndraws = 100)
+
+#fit
+task_m_real <- update(sim_m_real,
+  task_formula,
+  newdata= meta_clean,
+  prior = tsim_prior2,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+#pp check 2
+pp_check(task_m_real,ndraws = 100)
+#update plots
+post_t_Real <- as_draws_df(task_m_real)
+
+grid.arrange(
+ggplot(post_t_Real) +
+  geom_density(aes(prior_Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('Intercept') +
+  theme_classic(),
+
+ggplot(post_t_Real) +
+  geom_density(aes(prior_sd_ID), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(sd_ID__Intercept), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('sd') +
+  theme_classic(),
+
+ggplot(post_t_Real) +
+  geom_density(aes(prior_b), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_TYPE_OF_TASKFREE), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('FREE') +
+  theme_classic(),
+
+ggplot(post_t_Real) +
+  geom_density(aes(prior_b), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_TYPE_OF_TASKSOCIAL), fill="#FC4E07", color="black",alpha=0.6) + 
+  xlab('SOCIAL') +
+  theme_classic()
+)
+
+#summary
+print(task_m_real)
+
+```
+```{r}
+grid.arrange(
+post_t_Real %>% 
+  ggplot()+
+  geom_density(aes(b_Intercept), fill="steelblue", color="black",alpha=0.6) +
+  geom_density(aes(b_TYPE_OF_TASKSOCIAL), fill="#FC4E07", color="black",alpha=0.6) + 
+  geom_density(aes(b_TYPE_OF_TASKFREE), fill="green", color="black",alpha=0.6)+
+  xlab('') +
+  ggtitle("Posterior Distributions by Category")+
+  theme_classic(),
+
+post_t_Real %>% 
+  ggplot()+
+  geom_density(aes(b_Intercept), fill="grey", color="grey",alpha=0.6) +
+  geom_density(aes(b_TYPE_OF_TASKSOCIAL), fill="grey", color="grey",alpha=0.6) + 
+  geom_density(aes(b_TYPE_OF_TASKFREE), fill="grey", color="grey",alpha=0.6)+
+   geom_density(aes(post_sim_Real$b_Intercept), fill="purple", color="black",alpha=0.6)+
+  xlab('') +
+  ggtitle("Comparing to Baseline Model Posteriors")+
+  theme_classic()
+)
 ```
 
