@@ -677,6 +677,553 @@ Download the empirical dataset from brightspace and apply your ML pipeline to th
 Data: https://www.dropbox.com/s/7ky1axvea33lgye/Ass3_empiricalData1.csv?dl=0
 ```{r}
 
+empiric_dat <- read_csv("Ass3_empiricalData1.csv")
+
+```
+```{r}
+#separate test and train
+
+length(unique(empiric_dat$PatID))
+
+#there are 122 unique IDS
+```
+```{r}
+#pairs?
+
+d_idcheck<- tibble( idlist = unique(empiric_dat$PatID))
+# there i only 221 unique, not 244, so 23 are missing a partner
+
+length(unique(empiric_dat$NewID))
+fazs <- c(101,102,242,245,246,249,302,303,306,314,318,326,330,332,337,342,343,409,443,444,446,447,448)
+trial <- empiric_dat %>% 
+  filter(!PatID %in% fazs)
+
+length(unique(trial$PatID))
+
+length(unique(trial$NewID))
+# now 99 pairs are left with all 2 sides
+# Some with fewer visits like 
+```
+```{r}
+
+trial<-  trial %>% 
+  mutate(PatID = as.character(PatID),
+         Diagnosis = as.factor(Diagnosis)) %>% 
+  select(!Language)
+set.seed(1)
+#we´ll have 80 pairs for training and 19 for testing lets get it right with gender
+Trial_ID <- sample(trial$PatID,19)
+
+
+training_emp <- trial %>% 
+  filter( !PatID %in% Trial_ID )
+
+testing_emp <- trial %>% 
+  filter( PatID %in% Trial_ID )
+
+
+# check numbers to keep genders equal
+testing_emp %>% 
+  group_by(Gender, NewID) %>% 
+  summarise(length(Gender)) %>% 
+  group_by(Gender) %>%
+  summarise(length(NewID))
+
+training_emp %>% 
+  group_by(Gender, NewID) %>% 
+  summarise(length(Gender)) %>% 
+  group_by(Gender) %>%
+  summarise(length(NewID))
+
 ```
 
+```{r}
+#standardizing
 
+
+
+rec_emp <- training_emp %>% 
+  recipe(Diagnosis~.) %>% 
+  step_scale(all_numeric()) %>% 
+  step_center(all_numeric()) %>% 
+  prep(training=training_emp, retain=TRUE)
+
+training_emp_s <- juice(rec_emp)
+testing_emp_s <- bake(rec_emp, new_data = testing_emp)
+training_emp_s<- training_emp_s %>% 
+   mutate(PatID = as.character(PatID),
+          NewID = as.character(NewID))
+ 
+testing_emp_s <- training_emp_s %>% 
+   mutate(PatID = as.character(PatID),
+          NewID = as.character(NewID))
+
+
+```
+
+```{r}
+#stepcorr
+```
+
+```{r}
+set.seed(1)
+#joakhim time
+comp_ID <- sample(training_emp_s$PatID,16)
+d_inf <- training_emp_s %>% 
+  filter( !PatID %in% comp_ID)
+
+d_inf_test <- training_emp_s %>% 
+  filter( PatID %in% comp_ID)
+
+rec <- recipe(
+  Diagnosis ~ . ,
+  data = d_inf
+)
+
+
+corr_filter <- rec %>%
+  step_corr(all_numeric_predictors(), threshold = .5)
+
+filter_obj <- prep(corr_filter, training = d_inf)
+
+filtered_te <- bake(filter_obj, d_inf_test)
+
+
+```
+
+```{r}
+set.seed(1)
+filtered_noid<- filtered_te%>% 
+  mutate(PatID = NULL, Trail = NULL, NewID = NULL, Gender = NULL, Language = NULL, Corpus = NULL)
+ 
+filtered_te$PatID <-  d_inf_test$PatID
+filtered_te$NewID <- d_inf_test$NewID
+
+reclog <- logistic_reg() %>% 
+  set_mode("classification") %>% 
+  set_engine("glm") %>% 
+  fit(Diagnosis ~ . , data = filtered_noid )
+
+```
+```{r}
+explainer_lg <-
+  explain_tidymodels(
+    reclog,
+    data = filtered_noid,
+    y = as.numeric(filtered_noid$Diagnosis) - 1,
+    label = "logReg",
+    verbose = F
+  )
+
+explainer_lg %>% 
+  model_parts() %>% 
+  plot(show_boxplots = F )+
+  ggtitle("Feature Importance","")
+```
+
+```{r}
+#select variables
+
+#train
+
+training_emp_s_select <- training_emp_s %>% 
+  select(Diagnosis,
+         PatID,
+         MCEP12_Median,
+         creakF0_SD,
+         F1_Median,
+         MCEP16_Mean,
+         MCEP21_Median,
+         MCEP8_Mean,
+         CreakProbability_SD,
+         MCEP5_Mean,
+         MCEP3_Median,
+         HMPDD0_SD,
+         HMPDD6_Mean,
+         MCEP19_Mean,
+         MCEP20_Median,
+         MCEP8_IQR,
+         Pitch_IQR,
+         MCEP10_IQR,
+         MCEP22_Median,
+         Intensity_SD_Praat)
+
+#test
+
+testing_emp_s_select <- testing_emp_s %>% 
+  select(Diagnosis,
+         PatID,
+         MCEP12_Median,
+         creakF0_SD,
+         F1_Median,
+         MCEP16_Mean,
+         MCEP21_Median,
+         MCEP8_Mean,
+         CreakProbability_SD,
+         MCEP5_Mean,
+         MCEP3_Median,
+         HMPDD0_SD,
+         HMPDD6_Mean,
+         MCEP19_Mean,
+         MCEP20_Median,
+         MCEP8_IQR,
+         Pitch_IQR,
+         MCEP10_IQR,
+         MCEP22_Median,
+         Intensity_SD_Praat)
+
+
+```
+
+```{r}
+set.seed(3)
+#model
+emp_m1_f1<- bf(Diagnosis ~ 1 + MCEP12_Median+
+         creakF0_SD+
+         F1_Median+
+         MCEP16_Mean+
+         MCEP21_Median+
+         MCEP8_Mean+
+         CreakProbability_SD+
+         MCEP5_Mean+
+         MCEP3_Median+
+         HMPDD0_SD+
+         HMPDD6_Mean+
+         MCEP19_Mean+
+         MCEP20_Median+
+         MCEP8_IQR+
+         Pitch_IQR+
+         MCEP10_IQR+
+         MCEP22_Median+
+         Intensity_SD_Praat)
+#priors
+
+emp_p <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(1,.3), class = b)
+ 
+               
+)
+
+#prior predictive check
+
+emp_m1pp <- brm(
+  emp_m1_f1,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(emp_m1pp,ndraws = 100)
+
+#fit
+emp_m1 <- brm(
+  emp_m1_f1,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+
+#prior-posterior update check
+pp_check(emp_m1,ndraws = 100)
+
+print(emp_m1)
+```
+
+```{r}
+set.seed(3)
+# now with individual intercepts 
+emp_m1_f2<- bf(Diagnosis ~ 1 + MCEP12_Median+
+         creakF0_SD+
+         F1_Median+
+         MCEP16_Mean+
+         MCEP21_Median+
+         MCEP8_Mean+
+         CreakProbability_SD+
+         MCEP5_Mean+
+         MCEP3_Median+
+         HMPDD0_SD+
+         HMPDD6_Mean+
+         MCEP19_Mean+
+         MCEP20_Median+
+         MCEP8_IQR+
+         Pitch_IQR+
+         MCEP10_IQR+
+         MCEP22_Median+
+         Intensity_SD_Praat + (1|PatID))
+#priors
+
+emp_p <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(1,.3), class = b)
+ 
+               
+)
+
+#prior predictive check
+
+emp_m2pp <- brm(
+  emp_m1_f2,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(emp_m2pp,ndraws = 100)
+
+#fit
+emp_m2 <- brm(
+  emp_m1_f2,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+
+#prior-posterior update check
+pp_check(emp_m2,ndraws = 100)
+
+print(emp_m2)
+```
+
+```{r}
+set.seed(3)
+#now less is more 
+emp_m1_f3<- bf(Diagnosis ~ 1 + MCEP12_Median+
+         creakF0_SD+
+         F1_Median+
+         MCEP16_Mean+
+         MCEP21_Median+
+         MCEP8_Mean+
+         CreakProbability_SD)
+#priors
+
+emp_p <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(1,.3), class = b)
+ 
+               
+)
+
+#prior predictive check
+
+emp_m3pp <- brm(
+  emp_m1_f3,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(emp_m3pp,ndraws = 100)
+
+#fit
+emp_m3 <- brm(
+  emp_m1_f3,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+
+#prior-posterior update check
+pp_check(emp_m3,ndraws = 100)
+
+print(emp_m3)
+```
+```{r}
+set.seed(3)
+#now less is more but with individual intercepts
+emp_m1_f4<- bf(Diagnosis ~ 1 + MCEP12_Median+
+         creakF0_SD+
+         F1_Median+
+         MCEP16_Mean+
+         MCEP21_Median+
+         MCEP8_Mean+
+         CreakProbability_SD+ (1|PatID))
+#priors
+
+emp_p <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(1,.3), class = b)
+ 
+               
+)
+
+#prior predictive check
+
+emp_m4pp <- brm(
+  emp_m1_f4,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+pp_check(emp_m4pp,ndraws = 100)
+
+#fit
+emp_m4 <- brm(
+  emp_m1_f4,
+  data= training_emp_s_select,
+  prior = emp_p,
+  family = bernoulli,
+  sample_prior = T,
+  backend = "cmdstanr",
+  chains = 2,
+  cores = 5,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  ))
+
+
+#prior-posterior update check
+pp_check(emp_m4,ndraws = 100)
+
+print(emp_m4)
+```
+
+```{r}
+#make predictions
+
+training_emp_pred <- training_emp_s_select %>% 
+  mutate(m1 =  predict(emp_m1, newdata = training_emp_s_select),
+         m2 =  predict(emp_m2, newdata = training_emp_s_select),
+         m3 =  predict(emp_m3, newdata = training_emp_s_select),
+         m4 =  predict(emp_m4, newdata = training_emp_s_select),
+         )
+
+testing_emp_pred <- testing_emp_s_select %>% 
+  mutate(m1 =  predict(emp_m1, newdata = testing_emp_s_select),
+         m2 =  predict(emp_m2, newdata = testing_emp_s_select),
+         m3 =  predict(emp_m3, newdata = testing_emp_s_select),
+         m4 =  predict(emp_m4, newdata = testing_emp_s_select),
+         )
+
+
+```
+```{r}
+#fuck it we are going old R
+  
+  accuracy_2 <- function(df){
+    
+    df2 <- df %>% 
+      select(PatID, Diagnosis)
+    
+    df2$m1 <- df$m1[,1]
+    df2$m2 <- df$m2[,1]
+    df2$m3 <- df$m3[,1]
+    df2$m4 <- df$m4[,1]
+    
+    df2 <- df2 %>% 
+mutate(across(.cols = starts_with("m"),  ~ ifelse( .  > 0.5, "SCZ","CT")))
+    
+    df2<- df2 %>% 
+      ungroup() %>% 
+      mutate(across(.cols = starts_with("m"), ~ as.factor(.)))
+        
+    return(df2)
+  }
+
+
+final_pred_train <- accuracy_2(training_emp_pred)
+final_pred_tesst <- accuracy_2(testing_emp_pred)
+```
+
+Overall accuracy
+```{r}
+
+fscores2 <- tibble(
+ test = rep(c("Train","Test"),each = 4),
+ set = rep(rep(c("More","Less"),each = 2),2),
+ model = rep(c("Fixed","Var.Intercept"), 4),
+  score = c( f_meas(final_pred_train,
+         truth = Diagnosis,
+         estimate = m1)[1,3],
+         f_meas(final_pred_train ,
+         truth = Diagnosis,
+         estimate = m2)[1,3],
+         f_meas(final_pred_train ,
+         truth = Diagnosis,
+         estimate = m3)[1,3],
+         f_meas(final_pred_train ,
+         truth = Diagnosis,
+         estimate = m4)[1,3],
+         
+         
+         f_meas(final_pred_tesst,
+         truth = Diagnosis,
+         estimate = m1)[1,3],
+         f_meas(final_pred_tesst,
+         truth = Diagnosis,
+         estimate = m2)[1,3],
+          f_meas(final_pred_tesst,
+         truth = Diagnosis,
+         estimate = m3)[1,3],
+         f_meas(final_pred_tesst,
+         truth = Diagnosis,
+         estimate = m4)[1,3]
+        )
+)
+
+fscores2 <- fscores2 %>% 
+  mutate( score = as.numeric(score))
+
+```
+
+```{r}
+#visualise accuracy
+
+fscores2 %>% 
+  ggplot(aes(x=model, y = score, group = test, color = test))+
+  geom_point()+ 
+  geom_line()+
+  facet_wrap(~set)+
+  geom_hline(yintercept = .5, linetype = 2)+
+  theme_bw()
+```
